@@ -1,0 +1,95 @@
+"kind": "pipeline"
+"name": "koala-migration-check"
+"node":
+  "repo": "Osdp25w-koala"
+"steps":
+- "commands":
+  - "pip install -r requirements.txt || exit 1"
+  - "python manage.py check || exit 1"
+  - "python manage.py makemigrations --dry-run --check"
+  "environment":
+    "DJANGO_SECRET_KEY": "MIGRATION_CHECK_PIPELINE_SUPER_SECRET"
+  "image": "python:3.10.13-slim"
+  "name": "migration-dry-run"
+"trigger":
+  "event":
+  - "pull_request"
+"type": "kubernetes"
+---
+"kind": "pipeline"
+"name": "koala-test"
+"node":
+  "repo": "Osdp25w-koala"
+"services":
+- "environment":
+    "POSTGRES_DB": "koala-test"
+    "POSTGRES_PASSWORD": "koala-test"
+    "POSTGRES_USER": "koala-test"
+  "image": "postgres:14-alpine"
+  "name": "koala-test-db"
+- "image": "redis:7.4.2"
+  "name": "koala-test-redis"
+"steps":
+- "commands":
+  - "pip install -r requirements.txt || exit 1"
+  - "python manage.py test || exit 1"
+  "environment":
+    "DJANGO_SECRET_KEY": "TEST_PIPELINE_SUPER_SECRET"
+    "ENV": "test"
+    "POSTGRES_DB": "koala-test"
+    "POSTGRES_HOST": "koala-test-db"
+    "POSTGRES_PASSWORD": "koala-test"
+    "POSTGRES_PORT": "5432"
+    "POSTGRES_USER": "koala-test"
+    "REDIS_HOST": "koala-test-redis"
+    "REDIS_PORT": "6379"
+  "image": "python:3.10.13-slim"
+  "name": "install-and-test"
+"trigger":
+  "branch":
+  - "master"
+  "event":
+  - "push"
+"type": "kubernetes"
+---
+"kind": "pipeline"
+"name": "koala-deploy"
+"node":
+  "repo": "Osdp25w-koala"
+"steps":
+- "image": "plugins/docker"
+  "name": "build and push docker image"
+  "settings":
+    "password":
+      "from_secret": "DOCKER_PASSWORD_osdp25w"
+    "repo": "osdp25w/koala"
+    "tags":
+    - "latest"
+    - "${DRONE_COMMIT_SHA}"
+    "username":
+      "from_secret": "DOCKER_USERNAME_osdp25w"
+- "commands":
+  - "kubectl set image deployment/koala koala=osdp25w/koala:${DRONE_COMMIT_SHA} --namespace=koala || exit 1"
+  - "kubectl set image deployment/koala-celery-playlog koala-celery-playlog=osdp25w/koala:${DRONE_COMMIT_SHA} --namespace=koala || exit 1"
+  - "kubectl set image deployment/koala-celery-beat koala-celery-beat=osdp25w/koala:${DRONE_COMMIT_SHA} --namespace=koala || exit 1"
+  - "kubectl rollout status deployment/koala --namespace=koala || exit 1"
+  - "kubectl rollout status deployment/koala-celery-playlog --namespace=koala || exit 1"
+  - "kubectl rollout status deployment/koala-celery-beat --namespace=koala || exit 1"
+  - "echo Deployment success!"
+  "image": "sinlead/drone-kubectl"
+  "name": "deploy to k8s"
+  "settings":
+    "kubernetes_cert":
+      "from_secret": "K8S_CA"
+    "kubernetes_server":
+      "from_secret": "K8S_SERVER"
+    "kubernetes_token":
+      "from_secret": "K8S_TOKEN"
+    "namespace": "koala"
+    "startTimeout": 240
+"trigger":
+  "branch":
+  - "master"
+  "event":
+  - "push"
+"type": "kubernetes"

@@ -1,0 +1,2778 @@
+diff --git a/.dockerignore b/.dockerignore
+new file mode 100644
+index 0000000..4c49bd7
+--- /dev/null
++++ b/.dockerignore
+@@ -0,0 +1 @@
++.env
+diff --git a/.drone.jsonnet b/.drone.jsonnet
+new file mode 100644
+index 0000000..86fafb1
+--- /dev/null
++++ b/.drone.jsonnet
+@@ -0,0 +1,187 @@
++// output to .drone.yml (which drone really reads)
++// jsonnet .drone.jsonnet | jq . | yq -P - > .drone.yml
++
++
++local VALUES = {
++  PROJECT_NAME:             "koala",
++  DOCKERHUB_USER:           "osdp25w",
++  DOCKERHUB_IMAGE:          "osdp25w/koala",
++  K8S_DEPLOYMENT_NAME:      "koala",
++  K8S_DEPLOYMENT_NAMESPACE: "koala",
++  CONTAINER_NAME:           "koala",
++  BRANCH:                   "master",
++};
++
++
++
++local SECRET = {
++  K8S_SERVER:           { from_secret: "K8S_SERVER" },
++  K8S_TOKEN:            { from_secret: "K8S_TOKEN" },
++  K8S_CA:               { from_secret: "K8S_CA" },
++  DOCKER_USERNAME:      { from_secret: "DOCKER_USERNAME_osdp25w" },
++  DOCKER_PASSWORD:      { from_secret: "DOCKER_PASSWORD_osdp25w" },
++};
++
++
++local CELERY_DEPLOYMENTS = [
++  "%s-celery-playlog" % VALUES.K8S_DEPLOYMENT_NAME,
++  "%s-celery-beat" % VALUES.K8S_DEPLOYMENT_NAME,
++];
++
++
++local migration_chack_pipeline = {
++  kind: "pipeline",
++  type: "kubernetes",
++  name: "koala-migration-check",
++  node: {
++    // should be equal to DRONE_RUNNER_LABELS in drone-runner
++    repo: "Osdp25w-koala",
++  },
++  trigger: {
++    event: ["pull_request"],
++  },
++  steps: [
++    {
++      name:  "migration-dry-run",
++      image: "python:3.10.13-slim",
++      environment:{
++        DJANGO_SECRET_KEY: "MIGRATION_CHECK_PIPELINE_SUPER_SECRET"
++      },
++      commands: [
++        "pip install -r requirements.txt || exit 1",
++        "python manage.py check || exit 1",
++        "python manage.py makemigrations --dry-run --check",
++      ],
++    },
++  ],
++};
++
++local test_pipeline = {
++  kind: "pipeline",
++  type: "kubernetes",
++  name: "koala-test",
++  node: {
++    // should be equal to DRONE_RUNNER_LABELS in drone-runner
++    repo: "Osdp25w-koala",
++  },
++  trigger: {
++    event:  ["push"],
++    branch: [ VALUES.BRANCH ],
++  },
++  services: [
++    {
++      name: "koala-test-db",
++      image: "postgres:14-alpine",
++      environment: {
++        POSTGRES_USER: "koala-test",
++        POSTGRES_PASSWORD: "koala-test",
++        POSTGRES_DB: "koala-test",
++      },
++    },
++    {
++      name: "koala-test-redis",
++      image: "redis:7.4.2",
++    },
++  ],
++  steps: [
++    {
++      name:  "install-and-test",
++      image: "python:3.10.13-slim",
++      environment: {
++        ENV:                    "test",
++        DJANGO_SECRET_KEY:      "TEST_PIPELINE_SUPER_SECRET",
++        POSTGRES_HOST:          "koala-test-db",
++        POSTGRES_USER:          "koala-test",
++        POSTGRES_PASSWORD:      "koala-test",
++        POSTGRES_DB:            "koala-test",
++        POSTGRES_PORT:          "5432",
++        REDIS_HOST:             "koala-test-redis",
++        REDIS_PORT:             "6379",
++      },
++      commands: [
++        "pip install -r requirements.txt || exit 1",
++        "python manage.py test || exit 1",
++      ],
++    },
++  ],
++};
++
++local deploy_pipeline = {
++  kind: "pipeline",
++  type: "kubernetes",
++  name: "koala-deploy",
++  node: {
++    // should be equal to DRONE_RUNNER_LABELS in drone-runner
++      repo: "Osdp25w-koala",
++  },
++  trigger: {
++    event:  ["push"],
++    branch: [ VALUES.BRANCH ],
++  },
++  steps: [
++    {
++      name:  "build and push docker image",
++      image: "plugins/docker",
++      settings: {
++        repo:  VALUES.DOCKERHUB_IMAGE,
++        tags: ["latest", "${DRONE_COMMIT_SHA}"],
++        username: SECRET.DOCKER_USERNAME,
++        password: SECRET.DOCKER_PASSWORD,
++      },
++    },
++    {
++      name:  "deploy to k8s",
++      image: "sinlead/drone-kubectl",
++      settings: {
++        kubernetes_server: SECRET.K8S_SERVER,
++        kubernetes_token:  SECRET.K8S_TOKEN,
++        kubernetes_cert:   SECRET.K8S_CA,
++        namespace: VALUES.K8S_DEPLOYMENT_NAMESPACE,
++        startTimeout: 240
++      },
++      // commands: [
++      //   std.format(
++      //     "kubectl set image deployment/%s %s=%s:${DRONE_COMMIT_SHA} --namespace=%s || exit 1",
++      //     [VALUES.K8S_DEPLOYMENT_NAME, VALUES.CONTAINER_NAME, VALUES.DOCKERHUB_IMAGE, VALUES.K8S_DEPLOYMENT_NAMESPACE]
++      //   ),
++      //   std.format(
++      //     "kubectl rollout status deployment/%s --namespace=%s || exit 1",
++      //     [VALUES.K8S_DEPLOYMENT_NAME, VALUES.K8S_DEPLOYMENT_NAMESPACE]
++      //   ),
++      //   "echo Deployment success!",
++      // ],
++      commands: [
++        std.format(
++          "kubectl set image deployment/%s %s=%s:${DRONE_COMMIT_SHA} --namespace=%s || exit 1",
++          [VALUES.K8S_DEPLOYMENT_NAME, VALUES.CONTAINER_NAME, VALUES.DOCKERHUB_IMAGE, VALUES.K8S_DEPLOYMENT_NAMESPACE]
++        ),
++      ] +
++      std.map(
++        function(name)
++          std.format(
++            "kubectl set image deployment/%s %s=%s:${DRONE_COMMIT_SHA} --namespace=%s || exit 1",
++            [name, name, VALUES.DOCKERHUB_IMAGE, VALUES.K8S_DEPLOYMENT_NAMESPACE]
++          ),
++        CELERY_DEPLOYMENTS
++      ) +
++      [
++        std.format(
++          "kubectl rollout status deployment/%s --namespace=%s || exit 1",
++          [VALUES.K8S_DEPLOYMENT_NAME, VALUES.K8S_DEPLOYMENT_NAMESPACE]
++        ),
++      ] +
++      std.map(
++        function(name)
++          std.format(
++            "kubectl rollout status deployment/%s --namespace=%s || exit 1",
++            [name, VALUES.K8S_DEPLOYMENT_NAMESPACE]
++          ),
++        CELERY_DEPLOYMENTS
++      ) + [
++        "echo Deployment success!",
++      ]
++    },
++  ],
++};
++
++std.manifestYamlDoc(migration_chack_pipeline) + "\n---\n" + std.manifestYamlDoc(test_pipeline) + "\n---\n" + std.manifestYamlDoc(deploy_pipeline)
+diff --git a/.drone.yml b/.drone.yml
+new file mode 100644
+index 0000000..71ea749
+--- /dev/null
++++ b/.drone.yml
+@@ -0,0 +1,95 @@
++"kind": "pipeline"
++"name": "koala-migration-check"
++"node":
++  "repo": "Osdp25w-koala"
++"steps":
++- "commands":
++  - "pip install -r requirements.txt || exit 1"
++  - "python manage.py check || exit 1"
++  - "python manage.py makemigrations --dry-run --check"
++  "environment":
++    "DJANGO_SECRET_KEY": "MIGRATION_CHECK_PIPELINE_SUPER_SECRET"
++  "image": "python:3.10.13-slim"
++  "name": "migration-dry-run"
++"trigger":
++  "event":
++  - "pull_request"
++"type": "kubernetes"
++---
++"kind": "pipeline"
++"name": "koala-test"
++"node":
++  "repo": "Osdp25w-koala"
++"services":
++- "environment":
++    "POSTGRES_DB": "koala-test"
++    "POSTGRES_PASSWORD": "koala-test"
++    "POSTGRES_USER": "koala-test"
++  "image": "postgres:14-alpine"
++  "name": "koala-test-db"
++- "image": "redis:7.4.2"
++  "name": "koala-test-redis"
++"steps":
++- "commands":
++  - "pip install -r requirements.txt || exit 1"
++  - "python manage.py test || exit 1"
++  "environment":
++    "DJANGO_SECRET_KEY": "TEST_PIPELINE_SUPER_SECRET"
++    "ENV": "test"
++    "POSTGRES_DB": "koala-test"
++    "POSTGRES_HOST": "koala-test-db"
++    "POSTGRES_PASSWORD": "koala-test"
++    "POSTGRES_PORT": "5432"
++    "POSTGRES_USER": "koala-test"
++    "REDIS_HOST": "koala-test-redis"
++    "REDIS_PORT": "6379"
++  "image": "python:3.10.13-slim"
++  "name": "install-and-test"
++"trigger":
++  "branch":
++  - "master"
++  "event":
++  - "push"
++"type": "kubernetes"
++---
++"kind": "pipeline"
++"name": "koala-deploy"
++"node":
++  "repo": "Osdp25w-koala"
++"steps":
++- "image": "plugins/docker"
++  "name": "build and push docker image"
++  "settings":
++    "password":
++      "from_secret": "DOCKER_PASSWORD_osdp25w"
++    "repo": "osdp25w/koala"
++    "tags":
++    - "latest"
++    - "${DRONE_COMMIT_SHA}"
++    "username":
++      "from_secret": "DOCKER_USERNAME_osdp25w"
++- "commands":
++  - "kubectl set image deployment/koala koala=osdp25w/koala:${DRONE_COMMIT_SHA} --namespace=koala || exit 1"
++  - "kubectl set image deployment/koala-celery-playlog koala-celery-playlog=osdp25w/koala:${DRONE_COMMIT_SHA} --namespace=koala || exit 1"
++  - "kubectl set image deployment/koala-celery-beat koala-celery-beat=osdp25w/koala:${DRONE_COMMIT_SHA} --namespace=koala || exit 1"
++  - "kubectl rollout status deployment/koala --namespace=koala || exit 1"
++  - "kubectl rollout status deployment/koala-celery-playlog --namespace=koala || exit 1"
++  - "kubectl rollout status deployment/koala-celery-beat --namespace=koala || exit 1"
++  - "echo Deployment success!"
++  "image": "sinlead/drone-kubectl"
++  "name": "deploy to k8s"
++  "settings":
++    "kubernetes_cert":
++      "from_secret": "K8S_CA"
++    "kubernetes_server":
++      "from_secret": "K8S_SERVER"
++    "kubernetes_token":
++      "from_secret": "K8S_TOKEN"
++    "namespace": "koala"
++    "startTimeout": 240
++"trigger":
++  "branch":
++  - "master"
++  "event":
++  - "push"
++"type": "kubernetes"
+diff --git a/.gitignore b/.gitignore
+index 7b004e5..2b831c6 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -1,3 +1,7 @@
++.DS_Store
++.cursor/
++
++
+ # Byte-compiled / optimized / DLL files
+ __pycache__/
+ *.py[cod]
+@@ -191,4 +195,6 @@ cython_debug/
+ #  exclude from AI features like autocomplete and code analysis. Recommended for sensitive data
+ #  refer to https://docs.cursor.com/context/ignore-files
+ .cursorignore
+-.cursorindexingignore
+\ No newline at end of file
++.cursorindexingignore
++.gitsecret/keys/random_seed
++!*.secret
+diff --git a/.gitsecret/keys/pubring.kbx b/.gitsecret/keys/pubring.kbx
+new file mode 100644
+index 0000000..7182a51
+Binary files /dev/null and b/.gitsecret/keys/pubring.kbx differ
+diff --git a/.gitsecret/keys/pubring.kbx~ b/.gitsecret/keys/pubring.kbx~
+new file mode 100644
+index 0000000..f350432
+Binary files /dev/null and b/.gitsecret/keys/pubring.kbx~ differ
+diff --git a/.gitsecret/keys/trustdb.gpg b/.gitsecret/keys/trustdb.gpg
+new file mode 100644
+index 0000000..dd75432
+Binary files /dev/null and b/.gitsecret/keys/trustdb.gpg differ
+diff --git a/.gitsecret/paths/mapping.cfg b/.gitsecret/paths/mapping.cfg
+new file mode 100644
+index 0000000..36fb60a
+--- /dev/null
++++ b/.gitsecret/paths/mapping.cfg
+@@ -0,0 +1 @@
++env/koala-local.env:64e99c09d1283721c06e86ca8f1af47fb3b464567835f18cf168fa76a1c203ed
+diff --git a/.pre-commit-config.yaml b/.pre-commit-config.yaml
+new file mode 100644
+index 0000000..b50f1d5
+--- /dev/null
++++ b/.pre-commit-config.yaml
+@@ -0,0 +1,23 @@
++repos:
++  - repo: https://github.com/pre-commit/pre-commit-hooks
++    rev: v4.4.0
++    hooks:
++      - id: trailing-whitespace       # 刪除行尾多餘空白
++      - id: end-of-file-fixer         # 確保檔案以單一 newline 結尾
++      - id: check-added-large-files   # 防止不小心新增過大檔案
++      - id: double-quote-string-fixer # 將雙引號轉換為單引號
++
++  # Black：程式碼格式化
++  - repo: https://github.com/psf/black
++    rev: 23.7.0
++    hooks:
++      - id: black
++        args: ["--line-length=88", "--skip-string-normalization"] # 避免跟double-quote-string-fixer打架，因為black預設為雙引號
++
++
++  # isort：自動排序 import
++  - repo: https://github.com/PyCQA/isort
++    rev: 5.12.0
++    hooks:
++      - id: isort
++        args: ["--profile=black"]     # 配合 Black 的風格
+diff --git a/Dockerfile b/Dockerfile
+new file mode 100644
+index 0000000..1264788
+--- /dev/null
++++ b/Dockerfile
+@@ -0,0 +1,20 @@
++FROM python:3.10.13-slim
++
++WORKDIR /usr/src/app
++
++RUN apt-get update && \
++    apt-get install -y vim unzip procps && \
++    rm -rf /var/lib/apt/lists/*
++
++COPY requirements.txt requirements.txt
++RUN pip install -r requirements.txt
++
++COPY . .
++
++EXPOSE 8000
++
++ENTRYPOINT ["/usr/src/app/entrypoint.sh"]
++
++# CMD ["python manage.py migrate && python manage.py runserver 0.0.0.0:8000"]
++
++# CMD ["tail -f /dev/null"]
+diff --git a/backend-local.yml b/backend-local.yml
+new file mode 100644
+index 0000000..c1a6eed
+--- /dev/null
++++ b/backend-local.yml
+@@ -0,0 +1,132 @@
++services:
++  koala-db:
++    image: postgres:14
++    restart: on-failure
++    env_file:
++      - ./env/koala-local.env
++    volumes:
++      - db_data:/var/lib/postgresql/data
++    networks:
++      - koala-network
++    ports:
++      - "5432:5432"
++
++  koala-redis:
++    restart: on-failure
++    image: redis:7.4.2
++    env_file:
++      - ./env/koala-local.env
++    volumes:
++      - redis-data:/data
++    networks:
++      - koala-network
++    ports:
++      - "6379:6379"
++
++  koala:
++    build: .
++    depends_on:
++      - koala-db
++      - koala-redis
++      - koala-rabbitmq
++    restart: on-failure
++    env_file:
++      - ./env/koala-local.env
++    working_dir: /usr/src/app
++    volumes:
++      - ./:/usr/src/app
++    networks:
++      - koala-network
++    ports:
++      - "8000:8000"
++    command: >
++      bash -c "python manage.py migrate &&
++              python manage.py register_periodic_tasks &&
++              python manage.py runserver 0.0.0.0:8000"
++
++  koala-rabbitmq:
++    image: rabbitmq:3-management
++    restart: on-failure
++    env_file:
++      - ./env/koala-local.env
++    ports:
++      - "5672:5672"
++      - "15672:15672"
++    networks:
++      - koala-network
++    volumes:
++      - rabbitmq-data:/var/lib/rabbitmq
++
++  # koala-celery-playlog:
++  #   build: .
++  #   depends_on:
++  #     - koala-db
++  #     - koala-redis
++  #     - koala-rabbitmq
++  #   restart: on-failure
++  #   env_file:
++  #     - ./env/koala-local.env
++  #   working_dir: /usr/src/app
++  #   volumes:
++  #     - ./:/usr/src/app
++  #   networks:
++  #     - koala-network
++  #   healthcheck:
++  #     test: ["CMD", "celery", "-A", "koala", "status"]
++  #     interval: 30s
++  #     timeout: 10s
++  #     retries: 3
++  #     start_period: 30s
++  #   entrypoint: ["/usr/src/app/entrypoint-celery.sh", "playlog_q"]
++
++  # koala-celery-token:
++  #   build: .
++  #   depends_on:
++  #     - koala-db
++  #     - koala-redis
++  #     - koala-rabbitmq
++  #   restart: on-failure
++  #   env_file:
++  #     - ./env/koala-local.env
++  #   working_dir: /usr/src/app
++  #   volumes:
++  #     - ./:/usr/src/app
++  #   networks:
++  #     - koala-network
++  #   healthcheck:
++  #     test: ["CMD", "celery", "-A", "koala", "status"]
++  #     interval: 30s
++  #     timeout: 10s
++  #     retries: 3
++  #     start_period: 30s
++  #   entrypoint: ["/usr/src/app/entrypoint-celery.sh", "refresh_spotify_access_token_q"]
++
++  koala-celery-beat:
++    build: .
++    restart: on-failure
++    volumes:
++      - ./:/usr/src/app
++    env_file:
++      - ./env/koala-local.env
++    depends_on:
++      - koala-db
++      - koala-redis
++      - koala-rabbitmq
++    networks:
++      - koala-network
++    healthcheck:
++      test: ["CMD", "pgrep", "-f", "celery beat"]
++      interval: 30s
++      timeout: 10s
++      retries: 3
++      start_period: 30s
++    command: celery -A koala beat --loglevel=info
++
++networks:
++  koala-network:
++    driver: bridge
++
++volumes:
++  db_data:
++  redis-data:
++  rabbitmq-data:
+diff --git a/entrypoint-celery.sh b/entrypoint-celery.sh
+new file mode 100755
+index 0000000..69e0a70
+--- /dev/null
++++ b/entrypoint-celery.sh
+@@ -0,0 +1,6 @@
++#!/bin/bash
++# entrypoint-celery.sh
++
++
++QUEUE=${1:-playlog_q}
++celery -A koala worker -Q $QUEUE --concurrency=1 --loglevel=info -n ${QUEUE}_worker@%h
+diff --git a/entrypoint.sh b/entrypoint.sh
+new file mode 100755
+index 0000000..0e5be10
+--- /dev/null
++++ b/entrypoint.sh
+@@ -0,0 +1,7 @@
++#!/usr/bin/env sh
++
++python manage.py migrate
++
++python manage.py register_periodic_tasks
++
++gunicorn koala.wsgi:application --bind 0.0.0.0:8000 --reload --workers 3 --access-logfile - --error-logfile -
+diff --git a/export-requirements.sh b/export-requirements.sh
+new file mode 100644
+index 0000000..df6831a
+--- /dev/null
++++ b/export-requirements.sh
+@@ -0,0 +1,11 @@
++#!/usr/bin/env bash
++
++set -e
++
++echo "[Running] poetry install"
++poetry install
++
++echo "[Running] poetry export"
++poetry export --format=requirements.txt --output=requirements.txt --without-hashes
++
++echo "[Success] requirements.txt exported"
+diff --git a/install-env-Dockerfile b/install-env-Dockerfile
+new file mode 100644
+index 0000000..08e797a
+--- /dev/null
++++ b/install-env-Dockerfile
+@@ -0,0 +1,19 @@
++FROM python:3.10.13-slim
++
++WORKDIR /usr/src/app
++
++RUN pip install poetry==1.6.1
++
++COPY pyproject.toml poetry.lock ./
++
++RUN apt-get update && \
++    apt-get install vim -y \
++    unzip
++
++COPY requirements.txt requirements.txt
++
++RUN poetry install
++
++COPY export-requirements.sh ./
++
++RUN chmod +x export-requirements.sh
+diff --git a/koala/__init__.py b/koala/__init__.py
+new file mode 100644
+index 0000000..b91d130
+--- /dev/null
++++ b/koala/__init__.py
+@@ -0,0 +1,3 @@
++from koala.celery import app as celery_app
++
++__all__ = ('celery_app',)
+diff --git a/koala/asgi.py b/koala/asgi.py
+new file mode 100644
+index 0000000..884e67f
+--- /dev/null
++++ b/koala/asgi.py
+@@ -0,0 +1,16 @@
++"""
++ASGI config for koala project.
++
++It exposes the ASGI callable as a module-level variable named ``application``.
++
++For more information on this file, see
++https://docs.djangoproject.com/en/5.2/howto/deployment/asgi/
++"""
++
++import os
++
++from django.core.asgi import get_asgi_application
++
++os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'koala.settings')
++
++application = get_asgi_application()
+diff --git a/koala/celery.py b/koala/celery.py
+new file mode 100644
+index 0000000..dac0e41
+--- /dev/null
++++ b/koala/celery.py
+@@ -0,0 +1,15 @@
++import os
++
++from celery import Celery
++
++from koala import settings
++
++os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'koala.settings')
++
++app = Celery('koala')
++
++app.conf.broker_url = settings.CELERY_BROKER_URL
++app.conf.result_backend = settings.CELERY_RESULT_BACKEND
++
++
++app.autodiscover_tasks()
+diff --git a/koala/management/__init__.py b/koala/management/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/koala/management/commands/loadscript.py b/koala/management/commands/loadscript.py
+new file mode 100644
+index 0000000..86a3caa
+--- /dev/null
++++ b/koala/management/commands/loadscript.py
+@@ -0,0 +1,101 @@
++import importlib.util
++import os
++import re
++import sys
++
++from django.core.management.base import BaseCommand
++
++SCRIPT_ROOT = 'scripts'
++
++
++class Command(BaseCommand):
++    help = 'Run one or more scripts from scripts/<app_name>/'
++
++    def add_arguments(self, parser):
++        parser.add_argument(
++            'app_name', type=str, help='The app folder name under scripts/'
++        )
++        parser.add_argument(
++            'script_number',
++            nargs='?',
++            type=str,
++            help='The 4-digit script number (e.g., 0001)',
++        )
++        parser.add_argument(
++            '--dry-run',
++            action='store_true',
++            help='List scripts to be run without executing them',
++        )
++
++    def handle(self, *args, **options):
++        app_name = options['app_name']
++        script_number = options.get('script_number')
++        dry_run = options['dry_run']
++
++        app_script_dir = os.path.join(SCRIPT_ROOT, app_name)
++        if not os.path.isdir(app_script_dir):
++            self.stderr.write(
++                self.style.ERROR(f"❌ App scripts folder not found: scripts/{app_name}/")
++            )
++            return
++
++        if script_number:
++            if not re.match(r'^\d{4}$', script_number):
++                self.stderr.write(self.style.ERROR('❌ script_number 必須是 4 位數字，例如 0001'))
++                return
++
++            matched_files = [
++                f
++                for f in os.listdir(app_script_dir)
++                if f.startswith(script_number) and f.endswith('.py')
++            ]
++        else:
++            matched_files = sorted(
++                [
++                    f
++                    for f in os.listdir(app_script_dir)
++                    if re.match(r'^\d{4}_.*\.py$', f)
++                ]
++            )
++            if not dry_run:
++                confirm = input(
++                    f"⚠️ 你將執行 {len(matched_files)} 個 script，確定要繼續？(y/N): "
++                ).lower()
++                if confirm != 'y':
++                    self.stdout.write(self.style.WARNING('❎ 操作已取消'))
++                    return
++
++        if not matched_files:
++            self.stderr.write(self.style.ERROR('❌ 找不到符合條件的 script。'))
++            return
++
++        self.stdout.write(self.style.SUCCESS(f"✅ Scripts to run:"))
++        for fname in matched_files:
++            self.stdout.write(f"  - {fname}")
++
++        if dry_run:
++            self.stdout.write(self.style.WARNING('🟡 Dry-run 模式啟用，不會執行 script。'))
++            return
++
++        for script_file in matched_files:
++            script_path = os.path.join(app_script_dir, script_file)
++            try:
++                self.stdout.write(self.style.NOTICE(f"\n▶️ 執行 {script_file}..."))
++
++                spec = importlib.util.spec_from_file_location(
++                    'script_module', script_path
++                )
++                module = importlib.util.module_from_spec(spec)
++                sys.modules['script_module'] = module
++                spec.loader.exec_module(module)
++
++                script_class = getattr(module, 'CustomScript')
++                script_instance = script_class()
++                script_instance.execute()
++
++                self.stdout.write(self.style.SUCCESS(f"✅ {script_file} 執行完成"))
++            except Exception as e:
++                self.stderr.write(
++                    self.style.ERROR(f"❌ 執行 {script_file} 發生錯誤: {str(e)}")
++                )
++                raise e
+diff --git a/koala/management/commands/register_periodic_tasks.py b/koala/management/commands/register_periodic_tasks.py
+new file mode 100644
+index 0000000..a17ee06
+--- /dev/null
++++ b/koala/management/commands/register_periodic_tasks.py
+@@ -0,0 +1,55 @@
++import importlib
++
++from celery.schedules import crontab
++from django.apps import apps
++from django.core.management.base import BaseCommand
++from django.utils.timezone import get_current_timezone, now
++from django_celery_beat.models import CrontabSchedule, PeriodicTask
++
++
++class Command(BaseCommand):
++    help = 'Register all available Celery beat tasks from app schedules.py'
++
++    def handle(self, *args, **kwargs):
++        self.stdout.write('🔍 Discovering CELERY_BEAT_SCHEDULE from installed apps...')
++
++        all_schedules = {}
++
++        for app_config in apps.get_app_configs():
++            try:
++                module = importlib.import_module(f"{app_config.name}.schedules")
++                if hasattr(module, 'CELERY_BEAT_SCHEDULE'):
++                    self.stdout.write(f"✅ Found schedule in {app_config.name}")
++                    all_schedules.update(module.CELERY_BEAT_SCHEDULE)
++            except ModuleNotFoundError:
++                continue  # app 沒有 schedules.py 就跳過
++
++        self.stdout.write(f"📦 Total tasks found: {len(all_schedules)}")
++
++        for name, config in all_schedules.items():
++            task = config['task']
++            schedule = config['schedule']
++
++            if isinstance(schedule, crontab):
++                cron, _ = CrontabSchedule.objects.get_or_create(
++                    minute=schedule._orig_minute,
++                    hour=schedule._orig_hour,
++                    day_of_week=schedule._orig_day_of_week,
++                    day_of_month=schedule._orig_day_of_month,
++                    month_of_year=schedule._orig_month_of_year,
++                    timezone=schedule.tz or get_current_timezone(),
++                )
++                PeriodicTask.objects.update_or_create(
++                    name=name,
++                    defaults={
++                        'task': task,
++                        'crontab': cron,
++                        'enabled': True,
++                        'start_time': now(),
++                    },
++                )
++                self.stdout.write(f"📝 Registered: {name} → {task}")
++
++        self.stdout.write(
++            self.style.SUCCESS('🎉 All beat tasks registered successfully.')
++        )
+diff --git a/koala/settings.py b/koala/settings.py
+new file mode 100644
+index 0000000..6a49047
+--- /dev/null
++++ b/koala/settings.py
+@@ -0,0 +1,212 @@
++"""
++Django settings for koala project.
++
++Generated by 'django-admin startproject' using Django 5.2.1.
++
++For more information on this file, see
++https://docs.djangoproject.com/en/5.2/topics/settings/
++
++For the full list of settings and their values, see
++https://docs.djangoproject.com/en/5.2/ref/settings/
++"""
++
++import os
++from datetime import timedelta
++
++# Build paths inside the project like this: BASE_DIR / 'subdir'.
++BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
++
++
++# Quick-start development settings - unsuitable for production
++# See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
++
++# SECURITY WARNING: keep the secret key used in production secret!
++SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY')
++
++# SECURITY WARNING: don't run with debug turned on in production!
++DEBUG = True
++ENV = os.environ.get('ENV', 'local')
++
++ALLOWED_HOSTS = ['*']
++
++CORS_ALLOWED_ORIGINS = (
++    'http://localhost',
++    'http://localhost:8001',
++    'http://localhost:8002',
++    'http://localhost:8000',
++    'http://localhost:8081',
++    'http://localhost:8080',
++)
++
++CORS_ALLOWED_ORIGIN_REGEXES = ()
++
++# Application definition
++INSTALLED_APPS = [
++    'django.contrib.admin',
++    'django.contrib.auth',
++    'django.contrib.contenttypes',
++    'django.contrib.sessions',
++    'django.contrib.messages',
++    'django.contrib.staticfiles',
++]
++
++START_APPS = [
++    'koala',
++    # 'account',
++    # 'listening_profile',
++    # 'playlist',
++    # 'provider',
++    # 'track',
++]
++
++INSTALLED_APPS += START_APPS
++
++THIRD_PARTY_APPS = [
++    'django_extensions',
++    'corsheaders',
++    'rest_framework',
++    'django_celery_beat',
++]
++
++INSTALLED_APPS += THIRD_PARTY_APPS
++
++
++MIDDLEWARE = [
++    'django.middleware.security.SecurityMiddleware',
++    'django.contrib.sessions.middleware.SessionMiddleware',
++    'corsheaders.middleware.CorsMiddleware',
++    'django.middleware.common.CommonMiddleware',
++    'django.middleware.csrf.CsrfViewMiddleware',
++    'django.contrib.auth.middleware.AuthenticationMiddleware',
++    'django.contrib.messages.middleware.MessageMiddleware',
++    'django.middleware.clickjacking.XFrameOptionsMiddleware',
++]
++
++ROOT_URLCONF = 'koala.urls'
++
++TEMPLATES = [
++    {
++        'BACKEND': 'django.template.backends.django.DjangoTemplates',
++        'DIRS': [],
++        'APP_DIRS': True,
++        'OPTIONS': {
++            'context_processors': [
++                'django.template.context_processors.request',
++                'django.contrib.auth.context_processors.auth',
++                'django.contrib.messages.context_processors.messages',
++            ],
++        },
++    },
++]
++
++WSGI_APPLICATION = 'koala.wsgi.application'
++
++DEFAULT_AUTO_FIELD = 'django.db.models.AutoField'
++
++# Database
++# https://docs.djangoproject.com/en/5.2/ref/settings/#databases
++
++DATABASES = {
++    'default': {
++        'ENGINE': 'django.db.backends.postgresql',
++        'NAME': os.environ.get('POSTGRES_DB', 'koala'),
++        'USER': os.environ.get('POSTGRES_USER', 'koala'),
++        'PASSWORD': os.environ.get('POSTGRES_PASSWORD', 'p@ss1234'),
++        'HOST': os.environ.get('POSTGRES_HOST', 'koala-db'),
++        'PORT': os.environ.get('POSTGRES_PORT', '5432'),
++    }
++}
++
++
++# Password validation
++# https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
++
++AUTH_PASSWORD_VALIDATORS = [
++    {
++        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
++    },
++    {
++        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
++    },
++    {
++        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
++    },
++    {
++        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
++    },
++]
++
++DEFAULT_MEMBER_PASSWORD = os.environ.get('DEFAULT_MEMBER_PASSWORD', 'pass1234')
++
++REST_FRAMEWORK = {
++    'DEFAULT_AUTHENTICATION_CLASSES': (
++        'rest_framework_simplejwt.authentication.JWTAuthentication',
++    ),
++    'EXCEPTION_HANDLER': 'utils.exceptions.custom_exception_handler',
++}
++
++SIMPLE_JWT = {
++    'ACCESS_TOKEN_LIFETIME': timedelta(days=1),
++    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
++}
++
++# should add in dove env
++MEMBER_API_TOKEN_SECRET_KEY = os.getenv(
++    'MEMBER_API_TOKEN_SECRET_KEY', 'NjlsG_iWylZuptss7l5yihbmjYTkxtww98mcXmLcluQ='
++)
++
++# Internationalization
++# https://docs.djangoproject.com/en/5.2/topics/i18n/
++
++LANGUAGE_CODE = 'zh-hant'
++
++TIME_ZONE = 'Asia/Taipei'
++
++USE_I18N = True
++
++USE_TZ = True
++
++
++# Static files (CSS, JavaScript, Images)
++# https://docs.djangoproject.com/en/5.2/howto/static-files/
++
++STATIC_URL = 'static/'
++
++# Default primary key field type
++# https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
++
++REDIS_HOST = os.environ.get('REDIS_HOST', 'koala-redis')
++REDIS_PORT = os.environ.get('REDIS_PORT', '6379')
++REDIS_DB = os.environ.get('REDIS_DB', '1')
++REDIS_CACHE_LOCATION = f'redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}'
++
++
++DEFAULT_ALIAS = 'default'
++
++CACHES = {
++    DEFAULT_ALIAS: {
++        'BACKEND': 'django_redis.cache.RedisCache',
++        'LOCATION': REDIS_CACHE_LOCATION,
++        'TIMEOUT': 259200,
++        'OPTIONS': {
++            'COMPRESSOR': 'django_redis.compressors.zlib.ZlibCompressor',
++            'IGNORE_EXCEPTIONS': True,
++        },
++    },
++}
++
++SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
++SESSION_CACHE_ALIAS = 'default'
++
++# RabbitMQ
++RABBITMQ_HOST = os.environ.get('RABBITMQ_HOST', 'koala-rabbitmq')
++RABBITMQ_PORT = os.environ.get('RABBITMQ_PORT', '5672')
++RABBITMQ_USER = os.environ.get('RABBITMQ_DEFAULT_USER', 'koala')
++RABBITMQ_PASSWORD = os.environ.get('RABBITMQ_DEFAULT_PASS', 'p@ss1234')
++
++
++CELERY_BROKER_URL = (
++    f'amqp://{RABBITMQ_USER}:{RABBITMQ_PASSWORD}@{RABBITMQ_HOST}:{RABBITMQ_PORT}//'
++)
++CELERY_RESULT_BACKEND = f'redis://{REDIS_HOST}:{REDIS_PORT}/0'
++CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
+diff --git a/koala/urls.py b/koala/urls.py
+new file mode 100644
+index 0000000..9b28eae
+--- /dev/null
++++ b/koala/urls.py
+@@ -0,0 +1,53 @@
++"""
++URL configuration for koala project.
++
++The `urlpatterns` list routes URLs to views. For more information please see:
++    https://docs.djangoproject.com/en/5.2/topics/http/urls/
++Examples:
++Function views
++    1. Add an import:  from my_app import views
++    2. Add a URL to urlpatterns:  path('', views.home, name='home')
++Class-based views
++    1. Add an import:  from other_app.views import Home
++    2. Add a URL to urlpatterns:  path('', Home.as_view(), name='home')
++Including another URLconf
++    1. Import the include() function: from django.urls import include, path
++    2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
++"""
++from django.contrib import admin
++from django.urls import include, path
++
++from koala import settings
++
++urlpatterns = [
++    path('admin/', admin.site.urls),
++    # path('api/account/', include(('account.urls', 'account'), namespace='account')),
++    # path('api/provider/', include(('provider.urls', 'provider'), namespace='provider')),
++]
++
++
++# Spotify OAuth2 requires that, when using http (local development), the redirect_uri
++# must be as simple as possible, e.g., http://127.0.0.1:8000/callback/ (no subpaths allowed).
++# if settings.ENV == 'local':
++#     from django.http import Http404
++#     from rest_framework.permissions import AllowAny
++
++#     from provider.views import SpotifyAuthViewSet
++
++#     class LocalhostOnlySpotifyAuthCallbackView(SpotifyAuthViewSet):
++#         permission_classes = [AllowAny]
++
++#         def authorize_callback(self, request, *args, **kwargs):
++#             if request.get_host().split(':')[0] != '127.0.0.1':
++#                 raise Http404()
++#             return super().authorize_callback(request, *args, **kwargs)
++
++#     test_urlpatterns = [
++#         path(
++#             'callback/',
++#             LocalhostOnlySpotifyAuthCallbackView.as_view({'get': 'authorize_callback'}),
++#             name='root-spotify-auth-callback',
++#         ),
++#     ]
++
++#     urlpatterns += test_urlpatterns
+diff --git a/koala/wsgi.py b/koala/wsgi.py
+new file mode 100644
+index 0000000..25be8ad
+--- /dev/null
++++ b/koala/wsgi.py
+@@ -0,0 +1,16 @@
++"""
++WSGI config for koala project.
++
++It exposes the WSGI callable as a module-level variable named ``application``.
++
++For more information on this file, see
++https://docs.djangoproject.com/en/5.2/howto/deployment/wsgi/
++"""
++
++import os
++
++from django.core.wsgi import get_wsgi_application
++
++os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'koala.settings')
++
++application = get_wsgi_application()
+diff --git a/manage.py b/manage.py
+new file mode 100755
+index 0000000..819e304
+--- /dev/null
++++ b/manage.py
+@@ -0,0 +1,22 @@
++#!/usr/bin/env python
++"""Django's command-line utility for administrative tasks."""
++import os
++import sys
++
++
++def main():
++    """Run administrative tasks."""
++    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'koala.settings')
++    try:
++        from django.core.management import execute_from_command_line
++    except ImportError as exc:
++        raise ImportError(
++            "Couldn't import Django. Are you sure it's installed and "
++            'available on your PYTHONPATH environment variable? Did you '
++            'forget to activate a virtual environment?'
++        ) from exc
++    execute_from_command_line(sys.argv)
++
++
++if __name__ == '__main__':
++    main()
+diff --git a/poetry.lock b/poetry.lock
+new file mode 100644
+index 0000000..a4b4a66
+--- /dev/null
++++ b/poetry.lock
+@@ -0,0 +1,1247 @@
++# This file is automatically @generated by Poetry 1.6.1 and should not be changed by hand.
++
++[[package]]
++name = "amqp"
++version = "5.3.1"
++description = "Low-level AMQP client for Python (fork of amqplib)."
++optional = false
++python-versions = ">=3.6"
++files = [
++    {file = "amqp-5.3.1-py3-none-any.whl", hash = "sha256:43b3319e1b4e7d1251833a93d672b4af1e40f3d632d479b98661a95f117880a2"},
++    {file = "amqp-5.3.1.tar.gz", hash = "sha256:cddc00c725449522023bad949f70fff7b48f0b1ade74d170a6f10ab044739432"},
++]
++
++[package.dependencies]
++vine = ">=5.0.0,<6.0.0"
++
++[[package]]
++name = "appnope"
++version = "0.1.4"
++description = "Disable App Nap on macOS >= 10.9"
++optional = false
++python-versions = ">=3.6"
++files = [
++    {file = "appnope-0.1.4-py2.py3-none-any.whl", hash = "sha256:502575ee11cd7a28c0205f379b525beefebab9d161b7c964670864014ed7213c"},
++    {file = "appnope-0.1.4.tar.gz", hash = "sha256:1de3860566df9caf38f01f86f65e0e13e379af54f9e4bee1e66b48f2efffd1ee"},
++]
++
++[[package]]
++name = "asgiref"
++version = "3.8.1"
++description = "ASGI specs, helper code, and adapters"
++optional = false
++python-versions = ">=3.8"
++files = [
++    {file = "asgiref-3.8.1-py3-none-any.whl", hash = "sha256:3e1e3ecc849832fe52ccf2cb6686b7a55f82bb1d6aee72a58826471390335e47"},
++    {file = "asgiref-3.8.1.tar.gz", hash = "sha256:c343bd80a0bec947a9860adb4c432ffa7db769836c64238fc34bdc3fec84d590"},
++]
++
++[package.dependencies]
++typing-extensions = {version = ">=4", markers = "python_version < \"3.11\""}
++
++[package.extras]
++tests = ["mypy (>=0.800)", "pytest", "pytest-asyncio"]
++
++[[package]]
++name = "asttokens"
++version = "3.0.0"
++description = "Annotate AST trees with source code positions"
++optional = false
++python-versions = ">=3.8"
++files = [
++    {file = "asttokens-3.0.0-py3-none-any.whl", hash = "sha256:e3078351a059199dd5138cb1c706e6430c05eff2ff136af5eb4790f9d28932e2"},
++    {file = "asttokens-3.0.0.tar.gz", hash = "sha256:0dcd8baa8d62b0c1d118b399b2ddba3c4aff271d0d7a9e0d4c1681c79035bbc7"},
++]
++
++[package.extras]
++astroid = ["astroid (>=2,<4)"]
++test = ["astroid (>=2,<4)", "pytest", "pytest-cov", "pytest-xdist"]
++
++[[package]]
++name = "async-timeout"
++version = "5.0.1"
++description = "Timeout context manager for asyncio programs"
++optional = false
++python-versions = ">=3.8"
++files = [
++    {file = "async_timeout-5.0.1-py3-none-any.whl", hash = "sha256:39e3809566ff85354557ec2398b55e096c8364bacac9405a7a1fa429e77fe76c"},
++    {file = "async_timeout-5.0.1.tar.gz", hash = "sha256:d9321a7a3d5a6a5e187e824d2fa0793ce379a202935782d555d6e9d2735677d3"},
++]
++
++[[package]]
++name = "backcall"
++version = "0.2.0"
++description = "Specifications for callback functions passed in to an API"
++optional = false
++python-versions = "*"
++files = [
++    {file = "backcall-0.2.0-py2.py3-none-any.whl", hash = "sha256:fbbce6a29f263178a1f7915c1940bde0ec2b2a967566fe1c65c1dfb7422bd255"},
++    {file = "backcall-0.2.0.tar.gz", hash = "sha256:5cbdbf27be5e7cfadb448baf0aa95508f91f2bbc6c6437cd9cd06e2a4c215e1e"},
++]
++
++[[package]]
++name = "billiard"
++version = "4.2.1"
++description = "Python multiprocessing fork with improvements and bugfixes"
++optional = false
++python-versions = ">=3.7"
++files = [
++    {file = "billiard-4.2.1-py3-none-any.whl", hash = "sha256:40b59a4ac8806ba2c2369ea98d876bc6108b051c227baffd928c644d15d8f3cb"},
++    {file = "billiard-4.2.1.tar.gz", hash = "sha256:12b641b0c539073fc8d3f5b8b7be998956665c4233c7c1fcd66a7e677c4fb36f"},
++]
++
++[[package]]
++name = "celery"
++version = "5.5.3"
++description = "Distributed Task Queue."
++optional = false
++python-versions = ">=3.8"
++files = [
++    {file = "celery-5.5.3-py3-none-any.whl", hash = "sha256:0b5761a07057acee94694464ca482416b959568904c9dfa41ce8413a7d65d525"},
++    {file = "celery-5.5.3.tar.gz", hash = "sha256:6c972ae7968c2b5281227f01c3a3f984037d21c5129d07bf3550cc2afc6b10a5"},
++]
++
++[package.dependencies]
++billiard = ">=4.2.1,<5.0"
++click = ">=8.1.2,<9.0"
++click-didyoumean = ">=0.3.0"
++click-plugins = ">=1.1.1"
++click-repl = ">=0.2.0"
++kombu = [
++    {version = ">=5.5.2,<5.6"},
++    {version = "*", extras = ["redis"], optional = true, markers = "extra == \"redis\""},
++]
++python-dateutil = ">=2.8.2"
++vine = ">=5.1.0,<6.0"
++
++[package.extras]
++arangodb = ["pyArango (>=2.0.2)"]
++auth = ["cryptography (==44.0.2)"]
++azureblockblob = ["azure-identity (>=1.19.0)", "azure-storage-blob (>=12.15.0)"]
++brotli = ["brotli (>=1.0.0)", "brotlipy (>=0.7.0)"]
++cassandra = ["cassandra-driver (>=3.25.0,<4)"]
++consul = ["python-consul2 (==0.1.5)"]
++cosmosdbsql = ["pydocumentdb (==2.3.5)"]
++couchbase = ["couchbase (>=3.0.0)"]
++couchdb = ["pycouchdb (==1.16.0)"]
++django = ["Django (>=2.2.28)"]
++dynamodb = ["boto3 (>=1.26.143)"]
++elasticsearch = ["elastic-transport (<=8.17.1)", "elasticsearch (<=8.17.2)"]
++eventlet = ["eventlet (>=0.32.0)"]
++gcs = ["google-cloud-firestore (==2.20.1)", "google-cloud-storage (>=2.10.0)", "grpcio (==1.67.0)"]
++gevent = ["gevent (>=1.5.0)"]
++librabbitmq = ["librabbitmq (>=2.0.0)"]
++memcache = ["pylibmc (==1.6.3)"]
++mongodb = ["kombu[mongodb]"]
++msgpack = ["kombu[msgpack]"]
++pydantic = ["pydantic (>=2.4)"]
++pymemcache = ["python-memcached (>=1.61)"]
++pyro = ["pyro4 (==4.82)"]
++pytest = ["pytest-celery[all] (>=1.2.0,<1.3.0)"]
++redis = ["kombu[redis]"]
++s3 = ["boto3 (>=1.26.143)"]
++slmq = ["softlayer_messaging (>=1.0.3)"]
++solar = ["ephem (==4.2)"]
++sqlalchemy = ["kombu[sqlalchemy]"]
++sqs = ["boto3 (>=1.26.143)", "kombu[sqs] (>=5.5.0)", "urllib3 (>=1.26.16)"]
++tblib = ["tblib (>=1.3.0)", "tblib (>=1.5.0)"]
++yaml = ["kombu[yaml]"]
++zookeeper = ["kazoo (>=1.3.1)"]
++zstd = ["zstandard (==0.23.0)"]
++
++[[package]]
++name = "certifi"
++version = "2025.6.15"
++description = "Python package for providing Mozilla's CA Bundle."
++optional = false
++python-versions = ">=3.7"
++files = [
++    {file = "certifi-2025.6.15-py3-none-any.whl", hash = "sha256:2e0c7ce7cb5d8f8634ca55d2ba7e6ec2689a2fd6537d8dec1296a477a4910057"},
++    {file = "certifi-2025.6.15.tar.gz", hash = "sha256:d747aa5a8b9bbbb1bb8c22bb13e22bd1f18e9796defa16bab421f7f7a317323b"},
++]
++
++[[package]]
++name = "cffi"
++version = "1.17.1"
++description = "Foreign Function Interface for Python calling C code."
++optional = false
++python-versions = ">=3.8"
++files = [
++    {file = "cffi-1.17.1-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:df8b1c11f177bc2313ec4b2d46baec87a5f3e71fc8b45dab2ee7cae86d9aba14"},
++    {file = "cffi-1.17.1-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:8f2cdc858323644ab277e9bb925ad72ae0e67f69e804f4898c070998d50b1a67"},
++    {file = "cffi-1.17.1-cp310-cp310-manylinux_2_12_i686.manylinux2010_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:edae79245293e15384b51f88b00613ba9f7198016a5948b5dddf4917d4d26382"},
++    {file = "cffi-1.17.1-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:45398b671ac6d70e67da8e4224a065cec6a93541bb7aebe1b198a61b58c7b702"},
++    {file = "cffi-1.17.1-cp310-cp310-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:ad9413ccdeda48c5afdae7e4fa2192157e991ff761e7ab8fdd8926f40b160cc3"},
++    {file = "cffi-1.17.1-cp310-cp310-manylinux_2_17_s390x.manylinux2014_s390x.whl", hash = "sha256:5da5719280082ac6bd9aa7becb3938dc9f9cbd57fac7d2871717b1feb0902ab6"},
++    {file = "cffi-1.17.1-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:2bb1a08b8008b281856e5971307cc386a8e9c5b625ac297e853d36da6efe9c17"},
++    {file = "cffi-1.17.1-cp310-cp310-musllinux_1_1_aarch64.whl", hash = "sha256:045d61c734659cc045141be4bae381a41d89b741f795af1dd018bfb532fd0df8"},
++    {file = "cffi-1.17.1-cp310-cp310-musllinux_1_1_i686.whl", hash = "sha256:6883e737d7d9e4899a8a695e00ec36bd4e5e4f18fabe0aca0efe0a4b44cdb13e"},
++    {file = "cffi-1.17.1-cp310-cp310-musllinux_1_1_x86_64.whl", hash = "sha256:6b8b4a92e1c65048ff98cfe1f735ef8f1ceb72e3d5f0c25fdb12087a23da22be"},
++    {file = "cffi-1.17.1-cp310-cp310-win32.whl", hash = "sha256:c9c3d058ebabb74db66e431095118094d06abf53284d9c81f27300d0e0d8bc7c"},
++    {file = "cffi-1.17.1-cp310-cp310-win_amd64.whl", hash = "sha256:0f048dcf80db46f0098ccac01132761580d28e28bc0f78ae0d58048063317e15"},
++    {file = "cffi-1.17.1-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:a45e3c6913c5b87b3ff120dcdc03f6131fa0065027d0ed7ee6190736a74cd401"},
++    {file = "cffi-1.17.1-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:30c5e0cb5ae493c04c8b42916e52ca38079f1b235c2f8ae5f4527b963c401caf"},
++    {file = "cffi-1.17.1-cp311-cp311-manylinux_2_12_i686.manylinux2010_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:f75c7ab1f9e4aca5414ed4d8e5c0e303a34f4421f8a0d47a4d019ceff0ab6af4"},
++    {file = "cffi-1.17.1-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:a1ed2dd2972641495a3ec98445e09766f077aee98a1c896dcb4ad0d303628e41"},
++    {file = "cffi-1.17.1-cp311-cp311-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:46bf43160c1a35f7ec506d254e5c890f3c03648a4dbac12d624e4490a7046cd1"},
++    {file = "cffi-1.17.1-cp311-cp311-manylinux_2_17_s390x.manylinux2014_s390x.whl", hash = "sha256:a24ed04c8ffd54b0729c07cee15a81d964e6fee0e3d4d342a27b020d22959dc6"},
++    {file = "cffi-1.17.1-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:610faea79c43e44c71e1ec53a554553fa22321b65fae24889706c0a84d4ad86d"},
++    {file = "cffi-1.17.1-cp311-cp311-musllinux_1_1_aarch64.whl", hash = "sha256:a9b15d491f3ad5d692e11f6b71f7857e7835eb677955c00cc0aefcd0669adaf6"},
++    {file = "cffi-1.17.1-cp311-cp311-musllinux_1_1_i686.whl", hash = "sha256:de2ea4b5833625383e464549fec1bc395c1bdeeb5f25c4a3a82b5a8c756ec22f"},
++    {file = "cffi-1.17.1-cp311-cp311-musllinux_1_1_x86_64.whl", hash = "sha256:fc48c783f9c87e60831201f2cce7f3b2e4846bf4d8728eabe54d60700b318a0b"},
++    {file = "cffi-1.17.1-cp311-cp311-win32.whl", hash = "sha256:85a950a4ac9c359340d5963966e3e0a94a676bd6245a4b55bc43949eee26a655"},
++    {file = "cffi-1.17.1-cp311-cp311-win_amd64.whl", hash = "sha256:caaf0640ef5f5517f49bc275eca1406b0ffa6aa184892812030f04c2abf589a0"},
++    {file = "cffi-1.17.1-cp312-cp312-macosx_10_9_x86_64.whl", hash = "sha256:805b4371bf7197c329fcb3ead37e710d1bca9da5d583f5073b799d5c5bd1eee4"},
++    {file = "cffi-1.17.1-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:733e99bc2df47476e3848417c5a4540522f234dfd4ef3ab7fafdf555b082ec0c"},
++    {file = "cffi-1.17.1-cp312-cp312-manylinux_2_12_i686.manylinux2010_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:1257bdabf294dceb59f5e70c64a3e2f462c30c7ad68092d01bbbfb1c16b1ba36"},
++    {file = "cffi-1.17.1-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:da95af8214998d77a98cc14e3a3bd00aa191526343078b530ceb0bd710fb48a5"},
++    {file = "cffi-1.17.1-cp312-cp312-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:d63afe322132c194cf832bfec0dc69a99fb9bb6bbd550f161a49e9e855cc78ff"},
++    {file = "cffi-1.17.1-cp312-cp312-manylinux_2_17_s390x.manylinux2014_s390x.whl", hash = "sha256:f79fc4fc25f1c8698ff97788206bb3c2598949bfe0fef03d299eb1b5356ada99"},
++    {file = "cffi-1.17.1-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:b62ce867176a75d03a665bad002af8e6d54644fad99a3c70905c543130e39d93"},
++    {file = "cffi-1.17.1-cp312-cp312-musllinux_1_1_aarch64.whl", hash = "sha256:386c8bf53c502fff58903061338ce4f4950cbdcb23e2902d86c0f722b786bbe3"},
++    {file = "cffi-1.17.1-cp312-cp312-musllinux_1_1_x86_64.whl", hash = "sha256:4ceb10419a9adf4460ea14cfd6bc43d08701f0835e979bf821052f1805850fe8"},
++    {file = "cffi-1.17.1-cp312-cp312-win32.whl", hash = "sha256:a08d7e755f8ed21095a310a693525137cfe756ce62d066e53f502a83dc550f65"},
++    {file = "cffi-1.17.1-cp312-cp312-win_amd64.whl", hash = "sha256:51392eae71afec0d0c8fb1a53b204dbb3bcabcb3c9b807eedf3e1e6ccf2de903"},
++    {file = "cffi-1.17.1-cp313-cp313-macosx_10_13_x86_64.whl", hash = "sha256:f3a2b4222ce6b60e2e8b337bb9596923045681d71e5a082783484d845390938e"},
++    {file = "cffi-1.17.1-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:0984a4925a435b1da406122d4d7968dd861c1385afe3b45ba82b750f229811e2"},
++    {file = "cffi-1.17.1-cp313-cp313-manylinux_2_12_i686.manylinux2010_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:d01b12eeeb4427d3110de311e1774046ad344f5b1a7403101878976ecd7a10f3"},
++    {file = "cffi-1.17.1-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:706510fe141c86a69c8ddc029c7910003a17353970cff3b904ff0686a5927683"},
++    {file = "cffi-1.17.1-cp313-cp313-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:de55b766c7aa2e2a3092c51e0483d700341182f08e67c63630d5b6f200bb28e5"},
++    {file = "cffi-1.17.1-cp313-cp313-manylinux_2_17_s390x.manylinux2014_s390x.whl", hash = "sha256:c59d6e989d07460165cc5ad3c61f9fd8f1b4796eacbd81cee78957842b834af4"},
++    {file = "cffi-1.17.1-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:dd398dbc6773384a17fe0d3e7eeb8d1a21c2200473ee6806bb5e6a8e62bb73dd"},
++    {file = "cffi-1.17.1-cp313-cp313-musllinux_1_1_aarch64.whl", hash = "sha256:3edc8d958eb099c634dace3c7e16560ae474aa3803a5df240542b305d14e14ed"},
++    {file = "cffi-1.17.1-cp313-cp313-musllinux_1_1_x86_64.whl", hash = "sha256:72e72408cad3d5419375fc87d289076ee319835bdfa2caad331e377589aebba9"},
++    {file = "cffi-1.17.1-cp313-cp313-win32.whl", hash = "sha256:e03eab0a8677fa80d646b5ddece1cbeaf556c313dcfac435ba11f107ba117b5d"},
++    {file = "cffi-1.17.1-cp313-cp313-win_amd64.whl", hash = "sha256:f6a16c31041f09ead72d69f583767292f750d24913dadacf5756b966aacb3f1a"},
++    {file = "cffi-1.17.1-cp38-cp38-macosx_10_9_x86_64.whl", hash = "sha256:636062ea65bd0195bc012fea9321aca499c0504409f413dc88af450b57ffd03b"},
++    {file = "cffi-1.17.1-cp38-cp38-manylinux_2_12_i686.manylinux2010_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:c7eac2ef9b63c79431bc4b25f1cd649d7f061a28808cbc6c47b534bd789ef964"},
++    {file = "cffi-1.17.1-cp38-cp38-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:e221cf152cff04059d011ee126477f0d9588303eb57e88923578ace7baad17f9"},
++    {file = "cffi-1.17.1-cp38-cp38-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:31000ec67d4221a71bd3f67df918b1f88f676f1c3b535a7eb473255fdc0b83fc"},
++    {file = "cffi-1.17.1-cp38-cp38-manylinux_2_17_s390x.manylinux2014_s390x.whl", hash = "sha256:6f17be4345073b0a7b8ea599688f692ac3ef23ce28e5df79c04de519dbc4912c"},
++    {file = "cffi-1.17.1-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:0e2b1fac190ae3ebfe37b979cc1ce69c81f4e4fe5746bb401dca63a9062cdaf1"},
++    {file = "cffi-1.17.1-cp38-cp38-win32.whl", hash = "sha256:7596d6620d3fa590f677e9ee430df2958d2d6d6de2feeae5b20e82c00b76fbf8"},
++    {file = "cffi-1.17.1-cp38-cp38-win_amd64.whl", hash = "sha256:78122be759c3f8a014ce010908ae03364d00a1f81ab5c7f4a7a5120607ea56e1"},
++    {file = "cffi-1.17.1-cp39-cp39-macosx_10_9_x86_64.whl", hash = "sha256:b2ab587605f4ba0bf81dc0cb08a41bd1c0a5906bd59243d56bad7668a6fc6c16"},
++    {file = "cffi-1.17.1-cp39-cp39-macosx_11_0_arm64.whl", hash = "sha256:28b16024becceed8c6dfbc75629e27788d8a3f9030691a1dbf9821a128b22c36"},
++    {file = "cffi-1.17.1-cp39-cp39-manylinux_2_12_i686.manylinux2010_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:1d599671f396c4723d016dbddb72fe8e0397082b0a77a4fab8028923bec050e8"},
++    {file = "cffi-1.17.1-cp39-cp39-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:ca74b8dbe6e8e8263c0ffd60277de77dcee6c837a3d0881d8c1ead7268c9e576"},
++    {file = "cffi-1.17.1-cp39-cp39-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:f7f5baafcc48261359e14bcd6d9bff6d4b28d9103847c9e136694cb0501aef87"},
++    {file = "cffi-1.17.1-cp39-cp39-manylinux_2_17_s390x.manylinux2014_s390x.whl", hash = "sha256:98e3969bcff97cae1b2def8ba499ea3d6f31ddfdb7635374834cf89a1a08ecf0"},
++    {file = "cffi-1.17.1-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:cdf5ce3acdfd1661132f2a9c19cac174758dc2352bfe37d98aa7512c6b7178b3"},
++    {file = "cffi-1.17.1-cp39-cp39-musllinux_1_1_aarch64.whl", hash = "sha256:9755e4345d1ec879e3849e62222a18c7174d65a6a92d5b346b1863912168b595"},
++    {file = "cffi-1.17.1-cp39-cp39-musllinux_1_1_i686.whl", hash = "sha256:f1e22e8c4419538cb197e4dd60acc919d7696e5ef98ee4da4e01d3f8cfa4cc5a"},
++    {file = "cffi-1.17.1-cp39-cp39-musllinux_1_1_x86_64.whl", hash = "sha256:c03e868a0b3bc35839ba98e74211ed2b05d2119be4e8a0f224fba9384f1fe02e"},
++    {file = "cffi-1.17.1-cp39-cp39-win32.whl", hash = "sha256:e31ae45bc2e29f6b2abd0de1cc3b9d5205aa847cafaecb8af1476a609a2f6eb7"},
++    {file = "cffi-1.17.1-cp39-cp39-win_amd64.whl", hash = "sha256:d016c76bdd850f3c626af19b0542c9677ba156e4ee4fccfdd7848803533ef662"},
++    {file = "cffi-1.17.1.tar.gz", hash = "sha256:1c39c6016c32bc48dd54561950ebd6836e1670f2ae46128f67cf49e789c52824"},
++]
++
++[package.dependencies]
++pycparser = "*"
++
++[[package]]
++name = "charset-normalizer"
++version = "3.4.2"
++description = "The Real First Universal Charset Detector. Open, modern and actively maintained alternative to Chardet."
++optional = false
++python-versions = ">=3.7"
++files = [
++    {file = "charset_normalizer-3.4.2-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:7c48ed483eb946e6c04ccbe02c6b4d1d48e51944b6db70f697e089c193404941"},
++    {file = "charset_normalizer-3.4.2-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:b2d318c11350e10662026ad0eb71bb51c7812fc8590825304ae0bdd4ac283acd"},
++    {file = "charset_normalizer-3.4.2-cp310-cp310-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:9cbfacf36cb0ec2897ce0ebc5d08ca44213af24265bd56eca54bee7923c48fd6"},
++    {file = "charset_normalizer-3.4.2-cp310-cp310-manylinux_2_17_s390x.manylinux2014_s390x.whl", hash = "sha256:18dd2e350387c87dabe711b86f83c9c78af772c748904d372ade190b5c7c9d4d"},
++    {file = "charset_normalizer-3.4.2-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:8075c35cd58273fee266c58c0c9b670947c19df5fb98e7b66710e04ad4e9ff86"},
++    {file = "charset_normalizer-3.4.2-cp310-cp310-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:5bf4545e3b962767e5c06fe1738f951f77d27967cb2caa64c28be7c4563e162c"},
++    {file = "charset_normalizer-3.4.2-cp310-cp310-musllinux_1_2_aarch64.whl", hash = "sha256:7a6ab32f7210554a96cd9e33abe3ddd86732beeafc7a28e9955cdf22ffadbab0"},
++    {file = "charset_normalizer-3.4.2-cp310-cp310-musllinux_1_2_i686.whl", hash = "sha256:b33de11b92e9f75a2b545d6e9b6f37e398d86c3e9e9653c4864eb7e89c5773ef"},
++    {file = "charset_normalizer-3.4.2-cp310-cp310-musllinux_1_2_ppc64le.whl", hash = "sha256:8755483f3c00d6c9a77f490c17e6ab0c8729e39e6390328e42521ef175380ae6"},
++    {file = "charset_normalizer-3.4.2-cp310-cp310-musllinux_1_2_s390x.whl", hash = "sha256:68a328e5f55ec37c57f19ebb1fdc56a248db2e3e9ad769919a58672958e8f366"},
++    {file = "charset_normalizer-3.4.2-cp310-cp310-musllinux_1_2_x86_64.whl", hash = "sha256:21b2899062867b0e1fde9b724f8aecb1af14f2778d69aacd1a5a1853a597a5db"},
++    {file = "charset_normalizer-3.4.2-cp310-cp310-win32.whl", hash = "sha256:e8082b26888e2f8b36a042a58307d5b917ef2b1cacab921ad3323ef91901c71a"},
++    {file = "charset_normalizer-3.4.2-cp310-cp310-win_amd64.whl", hash = "sha256:f69a27e45c43520f5487f27627059b64aaf160415589230992cec34c5e18a509"},
++    {file = "charset_normalizer-3.4.2-cp311-cp311-macosx_10_9_universal2.whl", hash = "sha256:be1e352acbe3c78727a16a455126d9ff83ea2dfdcbc83148d2982305a04714c2"},
++    {file = "charset_normalizer-3.4.2-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:aa88ca0b1932e93f2d961bf3addbb2db902198dca337d88c89e1559e066e7645"},
++    {file = "charset_normalizer-3.4.2-cp311-cp311-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:d524ba3f1581b35c03cb42beebab4a13e6cdad7b36246bd22541fa585a56cccd"},
++    {file = "charset_normalizer-3.4.2-cp311-cp311-manylinux_2_17_s390x.manylinux2014_s390x.whl", hash = "sha256:28a1005facc94196e1fb3e82a3d442a9d9110b8434fc1ded7a24a2983c9888d8"},
++    {file = "charset_normalizer-3.4.2-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:fdb20a30fe1175ecabed17cbf7812f7b804b8a315a25f24678bcdf120a90077f"},
++    {file = "charset_normalizer-3.4.2-cp311-cp311-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:0f5d9ed7f254402c9e7d35d2f5972c9bbea9040e99cd2861bd77dc68263277c7"},
++    {file = "charset_normalizer-3.4.2-cp311-cp311-musllinux_1_2_aarch64.whl", hash = "sha256:efd387a49825780ff861998cd959767800d54f8308936b21025326de4b5a42b9"},
++    {file = "charset_normalizer-3.4.2-cp311-cp311-musllinux_1_2_i686.whl", hash = "sha256:f0aa37f3c979cf2546b73e8222bbfa3dc07a641585340179d768068e3455e544"},
++    {file = "charset_normalizer-3.4.2-cp311-cp311-musllinux_1_2_ppc64le.whl", hash = "sha256:e70e990b2137b29dc5564715de1e12701815dacc1d056308e2b17e9095372a82"},
++    {file = "charset_normalizer-3.4.2-cp311-cp311-musllinux_1_2_s390x.whl", hash = "sha256:0c8c57f84ccfc871a48a47321cfa49ae1df56cd1d965a09abe84066f6853b9c0"},
++    {file = "charset_normalizer-3.4.2-cp311-cp311-musllinux_1_2_x86_64.whl", hash = "sha256:6b66f92b17849b85cad91259efc341dce9c1af48e2173bf38a85c6329f1033e5"},
++    {file = "charset_normalizer-3.4.2-cp311-cp311-win32.whl", hash = "sha256:daac4765328a919a805fa5e2720f3e94767abd632ae410a9062dff5412bae65a"},
++    {file = "charset_normalizer-3.4.2-cp311-cp311-win_amd64.whl", hash = "sha256:e53efc7c7cee4c1e70661e2e112ca46a575f90ed9ae3fef200f2a25e954f4b28"},
++    {file = "charset_normalizer-3.4.2-cp312-cp312-macosx_10_13_universal2.whl", hash = "sha256:0c29de6a1a95f24b9a1aa7aefd27d2487263f00dfd55a77719b530788f75cff7"},
++    {file = "charset_normalizer-3.4.2-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:cddf7bd982eaa998934a91f69d182aec997c6c468898efe6679af88283b498d3"},
++    {file = "charset_normalizer-3.4.2-cp312-cp312-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:fcbe676a55d7445b22c10967bceaaf0ee69407fbe0ece4d032b6eb8d4565982a"},
++    {file = "charset_normalizer-3.4.2-cp312-cp312-manylinux_2_17_s390x.manylinux2014_s390x.whl", hash = "sha256:d41c4d287cfc69060fa91cae9683eacffad989f1a10811995fa309df656ec214"},
++    {file = "charset_normalizer-3.4.2-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:4e594135de17ab3866138f496755f302b72157d115086d100c3f19370839dd3a"},
++    {file = "charset_normalizer-3.4.2-cp312-cp312-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:cf713fe9a71ef6fd5adf7a79670135081cd4431c2943864757f0fa3a65b1fafd"},
++    {file = "charset_normalizer-3.4.2-cp312-cp312-musllinux_1_2_aarch64.whl", hash = "sha256:a370b3e078e418187da8c3674eddb9d983ec09445c99a3a263c2011993522981"},
++    {file = "charset_normalizer-3.4.2-cp312-cp312-musllinux_1_2_i686.whl", hash = "sha256:a955b438e62efdf7e0b7b52a64dc5c3396e2634baa62471768a64bc2adb73d5c"},
++    {file = "charset_normalizer-3.4.2-cp312-cp312-musllinux_1_2_ppc64le.whl", hash = "sha256:7222ffd5e4de8e57e03ce2cef95a4c43c98fcb72ad86909abdfc2c17d227fc1b"},
++    {file = "charset_normalizer-3.4.2-cp312-cp312-musllinux_1_2_s390x.whl", hash = "sha256:bee093bf902e1d8fc0ac143c88902c3dfc8941f7ea1d6a8dd2bcb786d33db03d"},
++    {file = "charset_normalizer-3.4.2-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:dedb8adb91d11846ee08bec4c8236c8549ac721c245678282dcb06b221aab59f"},
++    {file = "charset_normalizer-3.4.2-cp312-cp312-win32.whl", hash = "sha256:db4c7bf0e07fc3b7d89ac2a5880a6a8062056801b83ff56d8464b70f65482b6c"},
++    {file = "charset_normalizer-3.4.2-cp312-cp312-win_amd64.whl", hash = "sha256:5a9979887252a82fefd3d3ed2a8e3b937a7a809f65dcb1e068b090e165bbe99e"},
++    {file = "charset_normalizer-3.4.2-cp313-cp313-macosx_10_13_universal2.whl", hash = "sha256:926ca93accd5d36ccdabd803392ddc3e03e6d4cd1cf17deff3b989ab8e9dbcf0"},
++    {file = "charset_normalizer-3.4.2-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:eba9904b0f38a143592d9fc0e19e2df0fa2e41c3c3745554761c5f6447eedabf"},
++    {file = "charset_normalizer-3.4.2-cp313-cp313-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:3fddb7e2c84ac87ac3a947cb4e66d143ca5863ef48e4a5ecb83bd48619e4634e"},
++    {file = "charset_normalizer-3.4.2-cp313-cp313-manylinux_2_17_s390x.manylinux2014_s390x.whl", hash = "sha256:98f862da73774290f251b9df8d11161b6cf25b599a66baf087c1ffe340e9bfd1"},
++    {file = "charset_normalizer-3.4.2-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:6c9379d65defcab82d07b2a9dfbfc2e95bc8fe0ebb1b176a3190230a3ef0e07c"},
++    {file = "charset_normalizer-3.4.2-cp313-cp313-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:e635b87f01ebc977342e2697d05b56632f5f879a4f15955dfe8cef2448b51691"},
++    {file = "charset_normalizer-3.4.2-cp313-cp313-musllinux_1_2_aarch64.whl", hash = "sha256:1c95a1e2902a8b722868587c0e1184ad5c55631de5afc0eb96bc4b0d738092c0"},
++    {file = "charset_normalizer-3.4.2-cp313-cp313-musllinux_1_2_i686.whl", hash = "sha256:ef8de666d6179b009dce7bcb2ad4c4a779f113f12caf8dc77f0162c29d20490b"},
++    {file = "charset_normalizer-3.4.2-cp313-cp313-musllinux_1_2_ppc64le.whl", hash = "sha256:32fc0341d72e0f73f80acb0a2c94216bd704f4f0bce10aedea38f30502b271ff"},
++    {file = "charset_normalizer-3.4.2-cp313-cp313-musllinux_1_2_s390x.whl", hash = "sha256:289200a18fa698949d2b39c671c2cc7a24d44096784e76614899a7ccf2574b7b"},
++    {file = "charset_normalizer-3.4.2-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:4a476b06fbcf359ad25d34a057b7219281286ae2477cc5ff5e3f70a246971148"},
++    {file = "charset_normalizer-3.4.2-cp313-cp313-win32.whl", hash = "sha256:aaeeb6a479c7667fbe1099af9617c83aaca22182d6cf8c53966491a0f1b7ffb7"},
++    {file = "charset_normalizer-3.4.2-cp313-cp313-win_amd64.whl", hash = "sha256:aa6af9e7d59f9c12b33ae4e9450619cf2488e2bbe9b44030905877f0b2324980"},
++    {file = "charset_normalizer-3.4.2-cp37-cp37m-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:1cad5f45b3146325bb38d6855642f6fd609c3f7cad4dbaf75549bf3b904d3184"},
++    {file = "charset_normalizer-3.4.2-cp37-cp37m-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:b2680962a4848b3c4f155dc2ee64505a9c57186d0d56b43123b17ca3de18f0fa"},
++    {file = "charset_normalizer-3.4.2-cp37-cp37m-manylinux_2_17_s390x.manylinux2014_s390x.whl", hash = "sha256:36b31da18b8890a76ec181c3cf44326bf2c48e36d393ca1b72b3f484113ea344"},
++    {file = "charset_normalizer-3.4.2-cp37-cp37m-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:f4074c5a429281bf056ddd4c5d3b740ebca4d43ffffe2ef4bf4d2d05114299da"},
++    {file = "charset_normalizer-3.4.2-cp37-cp37m-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:c9e36a97bee9b86ef9a1cf7bb96747eb7a15c2f22bdb5b516434b00f2a599f02"},
++    {file = "charset_normalizer-3.4.2-cp37-cp37m-musllinux_1_2_aarch64.whl", hash = "sha256:1b1bde144d98e446b056ef98e59c256e9294f6b74d7af6846bf5ffdafd687a7d"},
++    {file = "charset_normalizer-3.4.2-cp37-cp37m-musllinux_1_2_i686.whl", hash = "sha256:915f3849a011c1f593ab99092f3cecfcb4d65d8feb4a64cf1bf2d22074dc0ec4"},
++    {file = "charset_normalizer-3.4.2-cp37-cp37m-musllinux_1_2_ppc64le.whl", hash = "sha256:fb707f3e15060adf5b7ada797624a6c6e0138e2a26baa089df64c68ee98e040f"},
++    {file = "charset_normalizer-3.4.2-cp37-cp37m-musllinux_1_2_s390x.whl", hash = "sha256:25a23ea5c7edc53e0f29bae2c44fcb5a1aa10591aae107f2a2b2583a9c5cbc64"},
++    {file = "charset_normalizer-3.4.2-cp37-cp37m-musllinux_1_2_x86_64.whl", hash = "sha256:770cab594ecf99ae64c236bc9ee3439c3f46be49796e265ce0cc8bc17b10294f"},
++    {file = "charset_normalizer-3.4.2-cp37-cp37m-win32.whl", hash = "sha256:6a0289e4589e8bdfef02a80478f1dfcb14f0ab696b5a00e1f4b8a14a307a3c58"},
++    {file = "charset_normalizer-3.4.2-cp37-cp37m-win_amd64.whl", hash = "sha256:6fc1f5b51fa4cecaa18f2bd7a003f3dd039dd615cd69a2afd6d3b19aed6775f2"},
++    {file = "charset_normalizer-3.4.2-cp38-cp38-macosx_10_9_universal2.whl", hash = "sha256:76af085e67e56c8816c3ccf256ebd136def2ed9654525348cfa744b6802b69eb"},
++    {file = "charset_normalizer-3.4.2-cp38-cp38-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:e45ba65510e2647721e35323d6ef54c7974959f6081b58d4ef5d87c60c84919a"},
++    {file = "charset_normalizer-3.4.2-cp38-cp38-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:046595208aae0120559a67693ecc65dd75d46f7bf687f159127046628178dc45"},
++    {file = "charset_normalizer-3.4.2-cp38-cp38-manylinux_2_17_s390x.manylinux2014_s390x.whl", hash = "sha256:75d10d37a47afee94919c4fab4c22b9bc2a8bf7d4f46f87363bcf0573f3ff4f5"},
++    {file = "charset_normalizer-3.4.2-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:6333b3aa5a12c26b2a4d4e7335a28f1475e0e5e17d69d55141ee3cab736f66d1"},
++    {file = "charset_normalizer-3.4.2-cp38-cp38-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:e8323a9b031aa0393768b87f04b4164a40037fb2a3c11ac06a03ffecd3618027"},
++    {file = "charset_normalizer-3.4.2-cp38-cp38-musllinux_1_2_aarch64.whl", hash = "sha256:24498ba8ed6c2e0b56d4acbf83f2d989720a93b41d712ebd4f4979660db4417b"},
++    {file = "charset_normalizer-3.4.2-cp38-cp38-musllinux_1_2_i686.whl", hash = "sha256:844da2b5728b5ce0e32d863af26f32b5ce61bc4273a9c720a9f3aa9df73b1455"},
++    {file = "charset_normalizer-3.4.2-cp38-cp38-musllinux_1_2_ppc64le.whl", hash = "sha256:65c981bdbd3f57670af8b59777cbfae75364b483fa8a9f420f08094531d54a01"},
++    {file = "charset_normalizer-3.4.2-cp38-cp38-musllinux_1_2_s390x.whl", hash = "sha256:3c21d4fca343c805a52c0c78edc01e3477f6dd1ad7c47653241cf2a206d4fc58"},
++    {file = "charset_normalizer-3.4.2-cp38-cp38-musllinux_1_2_x86_64.whl", hash = "sha256:dc7039885fa1baf9be153a0626e337aa7ec8bf96b0128605fb0d77788ddc1681"},
++    {file = "charset_normalizer-3.4.2-cp38-cp38-win32.whl", hash = "sha256:8272b73e1c5603666618805fe821edba66892e2870058c94c53147602eab29c7"},
++    {file = "charset_normalizer-3.4.2-cp38-cp38-win_amd64.whl", hash = "sha256:70f7172939fdf8790425ba31915bfbe8335030f05b9913d7ae00a87d4395620a"},
++    {file = "charset_normalizer-3.4.2-cp39-cp39-macosx_10_9_universal2.whl", hash = "sha256:005fa3432484527f9732ebd315da8da8001593e2cf46a3d817669f062c3d9ed4"},
++    {file = "charset_normalizer-3.4.2-cp39-cp39-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:e92fca20c46e9f5e1bb485887d074918b13543b1c2a1185e69bb8d17ab6236a7"},
++    {file = "charset_normalizer-3.4.2-cp39-cp39-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:50bf98d5e563b83cc29471fa114366e6806bc06bc7a25fd59641e41445327836"},
++    {file = "charset_normalizer-3.4.2-cp39-cp39-manylinux_2_17_s390x.manylinux2014_s390x.whl", hash = "sha256:721c76e84fe669be19c5791da68232ca2e05ba5185575086e384352e2c309597"},
++    {file = "charset_normalizer-3.4.2-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:82d8fd25b7f4675d0c47cf95b594d4e7b158aca33b76aa63d07186e13c0e0ab7"},
++    {file = "charset_normalizer-3.4.2-cp39-cp39-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:b3daeac64d5b371dea99714f08ffc2c208522ec6b06fbc7866a450dd446f5c0f"},
++    {file = "charset_normalizer-3.4.2-cp39-cp39-musllinux_1_2_aarch64.whl", hash = "sha256:dccab8d5fa1ef9bfba0590ecf4d46df048d18ffe3eec01eeb73a42e0d9e7a8ba"},
++    {file = "charset_normalizer-3.4.2-cp39-cp39-musllinux_1_2_i686.whl", hash = "sha256:aaf27faa992bfee0264dc1f03f4c75e9fcdda66a519db6b957a3f826e285cf12"},
++    {file = "charset_normalizer-3.4.2-cp39-cp39-musllinux_1_2_ppc64le.whl", hash = "sha256:eb30abc20df9ab0814b5a2524f23d75dcf83cde762c161917a2b4b7b55b1e518"},
++    {file = "charset_normalizer-3.4.2-cp39-cp39-musllinux_1_2_s390x.whl", hash = "sha256:c72fbbe68c6f32f251bdc08b8611c7b3060612236e960ef848e0a517ddbe76c5"},
++    {file = "charset_normalizer-3.4.2-cp39-cp39-musllinux_1_2_x86_64.whl", hash = "sha256:982bb1e8b4ffda883b3d0a521e23abcd6fd17418f6d2c4118d257a10199c0ce3"},
++    {file = "charset_normalizer-3.4.2-cp39-cp39-win32.whl", hash = "sha256:43e0933a0eff183ee85833f341ec567c0980dae57c464d8a508e1b2ceb336471"},
++    {file = "charset_normalizer-3.4.2-cp39-cp39-win_amd64.whl", hash = "sha256:d11b54acf878eef558599658b0ffca78138c8c3655cf4f3a4a673c437e67732e"},
++    {file = "charset_normalizer-3.4.2-py3-none-any.whl", hash = "sha256:7f56930ab0abd1c45cd15be65cc741c28b1c9a34876ce8c17a2fa107810c0af0"},
++    {file = "charset_normalizer-3.4.2.tar.gz", hash = "sha256:5baececa9ecba31eff645232d59845c07aa030f0c81ee70184a90d35099a0e63"},
++]
++
++[[package]]
++name = "click"
++version = "8.2.1"
++description = "Composable command line interface toolkit"
++optional = false
++python-versions = ">=3.10"
++files = [
++    {file = "click-8.2.1-py3-none-any.whl", hash = "sha256:61a3265b914e850b85317d0b3109c7f8cd35a670f963866005d6ef1d5175a12b"},
++    {file = "click-8.2.1.tar.gz", hash = "sha256:27c491cc05d968d271d5a1db13e3b5a184636d9d930f148c50b038f0d0646202"},
++]
++
++[package.dependencies]
++colorama = {version = "*", markers = "platform_system == \"Windows\""}
++
++[[package]]
++name = "click-didyoumean"
++version = "0.3.1"
++description = "Enables git-like *did-you-mean* feature in click"
++optional = false
++python-versions = ">=3.6.2"
++files = [
++    {file = "click_didyoumean-0.3.1-py3-none-any.whl", hash = "sha256:5c4bb6007cfea5f2fd6583a2fb6701a22a41eb98957e63d0fac41c10e7c3117c"},
++    {file = "click_didyoumean-0.3.1.tar.gz", hash = "sha256:4f82fdff0dbe64ef8ab2279bd6aa3f6a99c3b28c05aa09cbfc07c9d7fbb5a463"},
++]
++
++[package.dependencies]
++click = ">=7"
++
++[[package]]
++name = "click-plugins"
++version = "1.1.1.2"
++description = "An extension module for click to enable registering CLI commands via setuptools entry-points."
++optional = false
++python-versions = "*"
++files = [
++    {file = "click_plugins-1.1.1.2-py2.py3-none-any.whl", hash = "sha256:008d65743833ffc1f5417bf0e78e8d2c23aab04d9745ba817bd3e71b0feb6aa6"},
++    {file = "click_plugins-1.1.1.2.tar.gz", hash = "sha256:d7af3984a99d243c131aa1a828331e7630f4a88a9741fd05c927b204bcf92261"},
++]
++
++[package.dependencies]
++click = ">=4.0"
++
++[package.extras]
++dev = ["coveralls", "pytest (>=3.6)", "pytest-cov", "wheel"]
++
++[[package]]
++name = "click-repl"
++version = "0.3.0"
++description = "REPL plugin for Click"
++optional = false
++python-versions = ">=3.6"
++files = [
++    {file = "click-repl-0.3.0.tar.gz", hash = "sha256:17849c23dba3d667247dc4defe1757fff98694e90fe37474f3feebb69ced26a9"},
++    {file = "click_repl-0.3.0-py3-none-any.whl", hash = "sha256:fb7e06deb8da8de86180a33a9da97ac316751c094c6899382da7feeeeb51b812"},
++]
++
++[package.dependencies]
++click = ">=7.0"
++prompt-toolkit = ">=3.0.36"
++
++[package.extras]
++testing = ["pytest (>=7.2.1)", "pytest-cov (>=4.0.0)", "tox (>=4.4.3)"]
++
++[[package]]
++name = "colorama"
++version = "0.4.6"
++description = "Cross-platform colored terminal text."
++optional = false
++python-versions = "!=3.0.*,!=3.1.*,!=3.2.*,!=3.3.*,!=3.4.*,!=3.5.*,!=3.6.*,>=2.7"
++files = [
++    {file = "colorama-0.4.6-py2.py3-none-any.whl", hash = "sha256:4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6"},
++    {file = "colorama-0.4.6.tar.gz", hash = "sha256:08695f5cb7ed6e0531a20572697297273c47b8cae5a63ffc6d6ed5c201be6e44"},
++]
++
++[[package]]
++name = "cron-descriptor"
++version = "1.4.5"
++description = "A Python library that converts cron expressions into human readable strings."
++optional = false
++python-versions = "*"
++files = [
++    {file = "cron_descriptor-1.4.5-py3-none-any.whl", hash = "sha256:736b3ae9d1a99bc3dbfc5b55b5e6e7c12031e7ba5de716625772f8b02dcd6013"},
++    {file = "cron_descriptor-1.4.5.tar.gz", hash = "sha256:f51ce4ffc1d1f2816939add8524f206c376a42c87a5fca3091ce26725b3b1bca"},
++]
++
++[package.extras]
++dev = ["polib"]
++
++[[package]]
++name = "cryptography"
++version = "45.0.2"
++description = "cryptography is a package which provides cryptographic recipes and primitives to Python developers."
++optional = false
++python-versions = "!=3.9.0,!=3.9.1,>=3.7"
++files = [
++    {file = "cryptography-45.0.2-cp311-abi3-macosx_10_9_universal2.whl", hash = "sha256:61a8b1bbddd9332917485b2453d1de49f142e6334ce1d97b7916d5a85d179c84"},
++    {file = "cryptography-45.0.2-cp311-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:4cc31c66411e14dd70e2f384a9204a859dc25b05e1f303df0f5326691061b839"},
++    {file = "cryptography-45.0.2-cp311-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:463096533acd5097f8751115bc600b0b64620c4aafcac10c6d0041e6e68f88fe"},
++    {file = "cryptography-45.0.2-cp311-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:cdafb86eb673c3211accffbffdb3cdffa3aaafacd14819e0898d23696d18e4d3"},
++    {file = "cryptography-45.0.2-cp311-abi3-manylinux_2_28_armv7l.manylinux_2_31_armv7l.whl", hash = "sha256:05c2385b1f5c89a17df19900cfb1345115a77168f5ed44bdf6fd3de1ce5cc65b"},
++    {file = "cryptography-45.0.2-cp311-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:e9e4bdcd70216b08801e267c0b563316b787f957a46e215249921f99288456f9"},
++    {file = "cryptography-45.0.2-cp311-abi3-manylinux_2_34_aarch64.whl", hash = "sha256:b2de529027579e43b6dc1f805f467b102fb7d13c1e54c334f1403ee2b37d0059"},
++    {file = "cryptography-45.0.2-cp311-abi3-manylinux_2_34_x86_64.whl", hash = "sha256:10d68763892a7b19c22508ab57799c4423c7c8cd61d7eee4c5a6a55a46511949"},
++    {file = "cryptography-45.0.2-cp311-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:d2a90ce2f0f5b695e4785ac07c19a58244092f3c85d57db6d8eb1a2b26d2aad6"},
++    {file = "cryptography-45.0.2-cp311-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:59c0c8f043dd376bbd9d4f636223836aed50431af4c5a467ed9bf61520294627"},
++    {file = "cryptography-45.0.2-cp311-abi3-win32.whl", hash = "sha256:80303ee6a02ef38c4253160446cbeb5c400c07e01d4ddbd4ff722a89b736d95a"},
++    {file = "cryptography-45.0.2-cp311-abi3-win_amd64.whl", hash = "sha256:7429936146063bd1b2cfc54f0e04016b90ee9b1c908a7bed0800049cbace70eb"},
++    {file = "cryptography-45.0.2-cp37-abi3-macosx_10_9_universal2.whl", hash = "sha256:e86c8d54cd19a13e9081898b3c24351683fd39d726ecf8e774aaa9d8d96f5f3a"},
++    {file = "cryptography-45.0.2-cp37-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:e328357b6bbf79928363dbf13f4635b7aac0306afb7e5ad24d21d0c5761c3253"},
++    {file = "cryptography-45.0.2-cp37-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:49af56491473231159c98c2c26f1a8f3799a60e5cf0e872d00745b858ddac9d2"},
++    {file = "cryptography-45.0.2-cp37-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:f169469d04a23282de9d0be349499cb6683b6ff1b68901210faacac9b0c24b7d"},
++    {file = "cryptography-45.0.2-cp37-abi3-manylinux_2_28_armv7l.manylinux_2_31_armv7l.whl", hash = "sha256:9cfd1399064b13043082c660ddd97a0358e41c8b0dc7b77c1243e013d305c344"},
++    {file = "cryptography-45.0.2-cp37-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:18f8084b7ca3ce1b8d38bdfe33c48116edf9a08b4d056ef4a96dceaa36d8d965"},
++    {file = "cryptography-45.0.2-cp37-abi3-manylinux_2_34_aarch64.whl", hash = "sha256:2cb03a944a1a412724d15a7c051d50e63a868031f26b6a312f2016965b661942"},
++    {file = "cryptography-45.0.2-cp37-abi3-manylinux_2_34_x86_64.whl", hash = "sha256:a9727a21957d3327cf6b7eb5ffc9e4b663909a25fea158e3fcbc49d4cdd7881b"},
++    {file = "cryptography-45.0.2-cp37-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:ddb8d01aa900b741d6b7cc585a97aff787175f160ab975e21f880e89d810781a"},
++    {file = "cryptography-45.0.2-cp37-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:c0c000c1a09f069632d8a9eb3b610ac029fcc682f1d69b758e625d6ee713f4ed"},
++    {file = "cryptography-45.0.2-cp37-abi3-win32.whl", hash = "sha256:08281de408e7eb71ba3cd5098709a356bfdf65eebd7ee7633c3610f0aa80d79b"},
++    {file = "cryptography-45.0.2-cp37-abi3-win_amd64.whl", hash = "sha256:48caa55c528617fa6db1a9c3bf2e37ccb31b73e098ac2b71408d1f2db551dde4"},
++    {file = "cryptography-45.0.2-pp310-pypy310_pp73-macosx_10_9_x86_64.whl", hash = "sha256:a8ec324711596fbf21837d3a5db543937dd84597d364769b46e0102250023f77"},
++    {file = "cryptography-45.0.2-pp310-pypy310_pp73-manylinux_2_28_aarch64.whl", hash = "sha256:965611880c3fa8e504b7458484c0697e00ae6e937279cd6734fdaa2bc954dc49"},
++    {file = "cryptography-45.0.2-pp310-pypy310_pp73-manylinux_2_28_x86_64.whl", hash = "sha256:d891942592789fa0ab71b502550bbadb12f540d7413d7d7c4cef4b02af0f5bc6"},
++    {file = "cryptography-45.0.2-pp310-pypy310_pp73-manylinux_2_34_aarch64.whl", hash = "sha256:b19f4b28dd2ef2e6d600307fee656c00825a2980c4356a7080bd758d633c3a6f"},
++    {file = "cryptography-45.0.2-pp310-pypy310_pp73-manylinux_2_34_x86_64.whl", hash = "sha256:7c73968fbb7698a4c5d6160859db560d3aac160edde89c751edd5a8bc6560c88"},
++    {file = "cryptography-45.0.2-pp310-pypy310_pp73-win_amd64.whl", hash = "sha256:501de1296b2041dccf2115e3c7d4947430585601b251b140970ce255c5cfb985"},
++    {file = "cryptography-45.0.2-pp311-pypy311_pp73-macosx_10_9_x86_64.whl", hash = "sha256:1655d3a76e3dedb683c982a6c3a2cbfae2d08f47a48ec5a3d58db52b3d29ea6f"},
++    {file = "cryptography-45.0.2-pp311-pypy311_pp73-manylinux_2_28_aarch64.whl", hash = "sha256:dc7693573f16535428183de8fd27f0ca1ca37a51baa0b41dc5ed7b3d68fe80e2"},
++    {file = "cryptography-45.0.2-pp311-pypy311_pp73-manylinux_2_28_x86_64.whl", hash = "sha256:614bca7c6ed0d8ad1dce683a6289afae1f880675b4090878a0136c3da16bc693"},
++    {file = "cryptography-45.0.2-pp311-pypy311_pp73-manylinux_2_34_aarch64.whl", hash = "sha256:4142e20c29224cec63e9e32eb1e6014fb285fe39b7be66b3564ca978a3a8afe9"},
++    {file = "cryptography-45.0.2-pp311-pypy311_pp73-manylinux_2_34_x86_64.whl", hash = "sha256:9a900036b42f7324df7c7ad9569eb92ba0b613cf699160dd9c2154b24fd02f8e"},
++    {file = "cryptography-45.0.2-pp311-pypy311_pp73-win_amd64.whl", hash = "sha256:057723b79752a142efbc609e90b0dff27b0361ccbee3bd48312d70f5cdf53b78"},
++    {file = "cryptography-45.0.2.tar.gz", hash = "sha256:d784d57b958ffd07e9e226d17272f9af0c41572557604ca7554214def32c26bf"},
++]
++
++[package.dependencies]
++cffi = {version = ">=1.14", markers = "platform_python_implementation != \"PyPy\""}
++
++[package.extras]
++docs = ["sphinx (>=5.3.0)", "sphinx-inline-tabs", "sphinx-rtd-theme (>=3.0.0)"]
++docstest = ["pyenchant (>=3)", "readme-renderer (>=30.0)", "sphinxcontrib-spelling (>=7.3.1)"]
++nox = ["nox (>=2024.4.15)", "nox[uv] (>=2024.3.2)"]
++pep8test = ["check-sdist", "click (>=8.0.1)", "mypy (>=1.4)", "ruff (>=0.3.6)"]
++sdist = ["build (>=1.0.0)"]
++ssh = ["bcrypt (>=3.1.5)"]
++test = ["certifi (>=2024)", "cryptography-vectors (==45.0.2)", "pretend (>=0.7)", "pytest (>=7.4.0)", "pytest-benchmark (>=4.0)", "pytest-cov (>=2.10.1)", "pytest-xdist (>=3.5.0)"]
++test-randomorder = ["pytest-randomly"]
++
++[[package]]
++name = "decorator"
++version = "5.2.1"
++description = "Decorators for Humans"
++optional = false
++python-versions = ">=3.8"
++files = [
++    {file = "decorator-5.2.1-py3-none-any.whl", hash = "sha256:d316bb415a2d9e2d2b3abcc4084c6502fc09240e292cd76a76afc106a1c8e04a"},
++    {file = "decorator-5.2.1.tar.gz", hash = "sha256:65f266143752f734b0a7cc83c46f4618af75b8c5911b00ccb61d0ac9b6da0360"},
++]
++
++[[package]]
++name = "django"
++version = "5.2.2"
++description = "A high-level Python web framework that encourages rapid development and clean, pragmatic design."
++optional = false
++python-versions = ">=3.10"
++files = [
++    {file = "django-5.2.2-py3-none-any.whl", hash = "sha256:997ef2162d04ead6869551b22cde4e06da1f94cf595f4af3f3d3afeae1f3f6fe"},
++    {file = "django-5.2.2.tar.gz", hash = "sha256:85852e517f84435e9b13421379cd6c43ef5b48a9c8b391d29a26f7900967e952"},
++]
++
++[package.dependencies]
++asgiref = ">=3.8.1"
++sqlparse = ">=0.3.1"
++tzdata = {version = "*", markers = "sys_platform == \"win32\""}
++
++[package.extras]
++argon2 = ["argon2-cffi (>=19.1.0)"]
++bcrypt = ["bcrypt"]
++
++[[package]]
++name = "django-appconf"
++version = "1.1.0"
++description = "A helper class for handling configuration defaults of packaged apps gracefully."
++optional = false
++python-versions = ">=3.9"
++files = [
++    {file = "django-appconf-1.1.0.tar.gz", hash = "sha256:9fcead372f82a0f21ee189434e7ae9c007cbb29af1118c18251720f3d06243e4"},
++    {file = "django_appconf-1.1.0-py3-none-any.whl", hash = "sha256:7abd5a163ff57557f216e84d3ce9dac36c37ffce1ab9a044d3d53b7c943dd10f"},
++]
++
++[package.dependencies]
++django = "*"
++
++[[package]]
++name = "django-celery-beat"
++version = "2.8.1"
++description = "Database-backed Periodic Tasks."
++optional = false
++python-versions = ">=3.8"
++files = [
++    {file = "django_celery_beat-2.8.1-py3-none-any.whl", hash = "sha256:da2b1c6939495c05a551717509d6e3b79444e114a027f7b77bf3727c2a39d171"},
++    {file = "django_celery_beat-2.8.1.tar.gz", hash = "sha256:dfad0201c0ac50c91a34700ef8fa0a10ee098cc7f3375fe5debed79f2204f80a"},
++]
++
++[package.dependencies]
++celery = ">=5.2.3,<6.0"
++cron-descriptor = ">=1.2.32"
++Django = ">=2.2,<6.0"
++django-timezone-field = ">=5.0"
++python-crontab = ">=2.3.4"
++tzdata = "*"
++
++[[package]]
++name = "django-cors-headers"
++version = "4.6.0"
++description = "django-cors-headers is a Django application for handling the server headers required for Cross-Origin Resource Sharing (CORS)."
++optional = false
++python-versions = ">=3.9"
++files = [
++    {file = "django_cors_headers-4.6.0-py3-none-any.whl", hash = "sha256:8edbc0497e611c24d5150e0055d3b178c6534b8ed826fb6f53b21c63f5d48ba3"},
++    {file = "django_cors_headers-4.6.0.tar.gz", hash = "sha256:14d76b4b4c8d39375baeddd89e4f08899051eeaf177cb02a29bd6eae8cf63aa8"},
++]
++
++[package.dependencies]
++asgiref = ">=3.6"
++django = ">=4.2"
++
++[[package]]
++name = "django-cryptography"
++version = "1.1"
++description = "Easily encrypt data in Django"
++optional = false
++python-versions = ">=3.6"
++files = [
++    {file = "django_cryptography-1.1-py2.py3-none-any.whl", hash = "sha256:93702fcf0d75865d55362f20ecd95274c4eef60ccdce46cbdade0420acee07cb"},
++]
++
++[package.dependencies]
++cryptography = "*"
++Django = "*"
++django-appconf = "*"
++
++[[package]]
++name = "django-extensions"
++version = "4.1"
++description = "Extensions for Django"
++optional = false
++python-versions = ">=3.9"
++files = [
++    {file = "django_extensions-4.1-py3-none-any.whl", hash = "sha256:0699a7af28f2523bf8db309a80278519362cd4b6e1fd0a8cd4bf063e1e023336"},
++    {file = "django_extensions-4.1.tar.gz", hash = "sha256:7b70a4d28e9b840f44694e3f7feb54f55d495f8b3fa6c5c0e5e12bcb2aa3cdeb"},
++]
++
++[package.dependencies]
++django = ">=4.2"
++
++[[package]]
++name = "django-filter"
++version = "24.3"
++description = "Django-filter is a reusable Django application for allowing users to filter querysets dynamically."
++optional = false
++python-versions = ">=3.8"
++files = [
++    {file = "django_filter-24.3-py3-none-any.whl", hash = "sha256:c4852822928ce17fb699bcfccd644b3574f1a2d80aeb2b4ff4f16b02dd49dc64"},
++    {file = "django_filter-24.3.tar.gz", hash = "sha256:d8ccaf6732afd21ca0542f6733b11591030fa98669f8d15599b358e24a2cd9c3"},
++]
++
++[package.dependencies]
++Django = ">=4.2"
++
++[[package]]
++name = "django-redis"
++version = "5.0.0"
++description = "Full featured redis cache backend for Django."
++optional = false
++python-versions = ">=3.6"
++files = [
++    {file = "django-redis-5.0.0.tar.gz", hash = "sha256:048f665bbe27f8ff2edebae6aa9c534ab137f1e8fa7234147ef470df3f3aa9b8"},
++    {file = "django_redis-5.0.0-py3-none-any.whl", hash = "sha256:97739ca9de3f964c51412d1d7d8aecdfd86737bb197fce6e1ff12620c63c97ee"},
++]
++
++[package.dependencies]
++Django = ">=2.2"
++redis = ">=3.0.0"
++
++[[package]]
++name = "django-timezone-field"
++version = "7.1"
++description = "A Django app providing DB, form, and REST framework fields for zoneinfo and pytz timezone objects."
++optional = false
++python-versions = "<4.0,>=3.8"
++files = [
++    {file = "django_timezone_field-7.1-py3-none-any.whl", hash = "sha256:93914713ed882f5bccda080eda388f7006349f25930b6122e9b07bf8db49c4b4"},
++    {file = "django_timezone_field-7.1.tar.gz", hash = "sha256:b3ef409d88a2718b566fabe10ea996f2838bc72b22d3a2900c0aa905c761380c"},
++]
++
++[package.dependencies]
++Django = ">=3.2,<6.0"
++
++[[package]]
++name = "djangorestframework"
++version = "3.15.2"
++description = "Web APIs for Django, made easy."
++optional = false
++python-versions = ">=3.8"
++files = [
++    {file = "djangorestframework-3.15.2-py3-none-any.whl", hash = "sha256:2b8871b062ba1aefc2de01f773875441a961fefbf79f5eed1e32b2f096944b20"},
++    {file = "djangorestframework-3.15.2.tar.gz", hash = "sha256:36fe88cd2d6c6bec23dca9804bab2ba5517a8bb9d8f47ebc68981b56840107ad"},
++]
++
++[package.dependencies]
++django = ">=4.2"
++
++[[package]]
++name = "djangorestframework-simplejwt"
++version = "5.4.0"
++description = "A minimal JSON Web Token authentication plugin for Django REST Framework"
++optional = false
++python-versions = ">=3.9"
++files = [
++    {file = "djangorestframework_simplejwt-5.4.0-py3-none-any.whl", hash = "sha256:7aec953db9ed4163430c16d086eecb0f028f814ce6bba62b06c25919261e9077"},
++    {file = "djangorestframework_simplejwt-5.4.0.tar.gz", hash = "sha256:cccecce1a0e1a4a240fae80da73e5fc23055bababb8b67de88fa47cd36822320"},
++]
++
++[package.dependencies]
++django = ">=4.2"
++djangorestframework = ">=3.14"
++pyjwt = ">=1.7.1,<3"
++
++[package.extras]
++crypto = ["cryptography (>=3.3.1)"]
++dev = ["Sphinx (>=1.6.5,<2)", "cryptography", "flake8", "freezegun", "ipython", "isort", "pep8", "pytest", "pytest-cov", "pytest-django", "pytest-watch", "pytest-xdist", "python-jose (==3.3.0)", "sphinx_rtd_theme (>=0.1.9)", "tox", "twine", "wheel"]
++doc = ["Sphinx (>=1.6.5,<2)", "sphinx_rtd_theme (>=0.1.9)"]
++lint = ["flake8", "isort", "pep8"]
++python-jose = ["python-jose (==3.3.0)"]
++test = ["cryptography", "freezegun", "pytest", "pytest-cov", "pytest-django", "pytest-xdist", "tox"]
++
++[[package]]
++name = "executing"
++version = "2.2.0"
++description = "Get the currently executing AST node of a frame, and other information"
++optional = false
++python-versions = ">=3.8"
++files = [
++    {file = "executing-2.2.0-py2.py3-none-any.whl", hash = "sha256:11387150cad388d62750327a53d3339fad4888b39a6fe233c3afbb54ecffd3aa"},
++    {file = "executing-2.2.0.tar.gz", hash = "sha256:5d108c028108fe2551d1a7b2e8b713341e2cb4fc0aa7dcf966fa4327a5226755"},
++]
++
++[package.extras]
++tests = ["asttokens (>=2.1.0)", "coverage", "coverage-enable-subprocess", "ipython", "littleutils", "pytest", "rich"]
++
++[[package]]
++name = "gunicorn"
++version = "23.0.0"
++description = "WSGI HTTP Server for UNIX"
++optional = false
++python-versions = ">=3.7"
++files = [
++    {file = "gunicorn-23.0.0-py3-none-any.whl", hash = "sha256:ec400d38950de4dfd418cff8328b2c8faed0edb0d517d3394e457c317908ca4d"},
++    {file = "gunicorn-23.0.0.tar.gz", hash = "sha256:f014447a0101dc57e294f6c18ca6b40227a4c90e9bdb586042628030cba004ec"},
++]
++
++[package.dependencies]
++packaging = "*"
++
++[package.extras]
++eventlet = ["eventlet (>=0.24.1,!=0.36.0)"]
++gevent = ["gevent (>=1.4.0)"]
++setproctitle = ["setproctitle"]
++testing = ["coverage", "eventlet", "gevent", "pytest", "pytest-cov"]
++tornado = ["tornado (>=0.2)"]
++
++[[package]]
++name = "idna"
++version = "3.10"
++description = "Internationalized Domain Names in Applications (IDNA)"
++optional = false
++python-versions = ">=3.6"
++files = [
++    {file = "idna-3.10-py3-none-any.whl", hash = "sha256:946d195a0d259cbba61165e88e65941f16e9b36ea6ddb97f00452bae8b1287d3"},
++    {file = "idna-3.10.tar.gz", hash = "sha256:12f65c9b470abda6dc35cf8e63cc574b1c52b11df2c86030af0ac09b01b13ea9"},
++]
++
++[package.extras]
++all = ["flake8 (>=7.1.1)", "mypy (>=1.11.2)", "pytest (>=8.3.2)", "ruff (>=0.6.2)"]
++
++[[package]]
++name = "ipython"
++version = "8.10.0"
++description = "IPython: Productive Interactive Computing"
++optional = false
++python-versions = ">=3.8"
++files = [
++    {file = "ipython-8.10.0-py3-none-any.whl", hash = "sha256:b38c31e8fc7eff642fc7c597061fff462537cf2314e3225a19c906b7b0d8a345"},
++    {file = "ipython-8.10.0.tar.gz", hash = "sha256:b13a1d6c1f5818bd388db53b7107d17454129a70de2b87481d555daede5eb49e"},
++]
++
++[package.dependencies]
++appnope = {version = "*", markers = "sys_platform == \"darwin\""}
++backcall = "*"
++colorama = {version = "*", markers = "sys_platform == \"win32\""}
++decorator = "*"
++jedi = ">=0.16"
++matplotlib-inline = "*"
++pexpect = {version = ">4.3", markers = "sys_platform != \"win32\""}
++pickleshare = "*"
++prompt-toolkit = ">=3.0.30,<3.1.0"
++pygments = ">=2.4.0"
++stack-data = "*"
++traitlets = ">=5"
++
++[package.extras]
++all = ["black", "curio", "docrepr", "ipykernel", "ipyparallel", "ipywidgets", "matplotlib", "matplotlib (!=3.2.0)", "nbconvert", "nbformat", "notebook", "numpy (>=1.21)", "pandas", "pytest (<7)", "pytest (<7.1)", "pytest-asyncio", "qtconsole", "setuptools (>=18.5)", "sphinx (>=1.3)", "sphinx-rtd-theme", "stack-data", "testpath", "trio", "typing-extensions"]
++black = ["black"]
++doc = ["docrepr", "ipykernel", "matplotlib", "pytest (<7)", "pytest (<7.1)", "pytest-asyncio", "setuptools (>=18.5)", "sphinx (>=1.3)", "sphinx-rtd-theme", "stack-data", "testpath", "typing-extensions"]
++kernel = ["ipykernel"]
++nbconvert = ["nbconvert"]
++nbformat = ["nbformat"]
++notebook = ["ipywidgets", "notebook"]
++parallel = ["ipyparallel"]
++qtconsole = ["qtconsole"]
++test = ["pytest (<7.1)", "pytest-asyncio", "testpath"]
++test-extra = ["curio", "matplotlib (!=3.2.0)", "nbformat", "numpy (>=1.21)", "pandas", "pytest (<7.1)", "pytest-asyncio", "testpath", "trio"]
++
++[[package]]
++name = "jedi"
++version = "0.19.2"
++description = "An autocompletion tool for Python that can be used for text editors."
++optional = false
++python-versions = ">=3.6"
++files = [
++    {file = "jedi-0.19.2-py2.py3-none-any.whl", hash = "sha256:a8ef22bde8490f57fe5c7681a3c83cb58874daf72b4784de3cce5b6ef6edb5b9"},
++    {file = "jedi-0.19.2.tar.gz", hash = "sha256:4770dc3de41bde3966b02eb84fbcf557fb33cce26ad23da12c742fb50ecb11f0"},
++]
++
++[package.dependencies]
++parso = ">=0.8.4,<0.9.0"
++
++[package.extras]
++docs = ["Jinja2 (==2.11.3)", "MarkupSafe (==1.1.1)", "Pygments (==2.8.1)", "alabaster (==0.7.12)", "babel (==2.9.1)", "chardet (==4.0.0)", "commonmark (==0.8.1)", "docutils (==0.17.1)", "future (==0.18.2)", "idna (==2.10)", "imagesize (==1.2.0)", "mock (==1.0.1)", "packaging (==20.9)", "pyparsing (==2.4.7)", "pytz (==2021.1)", "readthedocs-sphinx-ext (==2.1.4)", "recommonmark (==0.5.0)", "requests (==2.25.1)", "six (==1.15.0)", "snowballstemmer (==2.1.0)", "sphinx (==1.8.5)", "sphinx-rtd-theme (==0.4.3)", "sphinxcontrib-serializinghtml (==1.1.4)", "sphinxcontrib-websupport (==1.2.4)", "urllib3 (==1.26.4)"]
++qa = ["flake8 (==5.0.4)", "mypy (==0.971)", "types-setuptools (==67.2.0.1)"]
++testing = ["Django", "attrs", "colorama", "docopt", "pytest (<9.0.0)"]
++
++[[package]]
++name = "kombu"
++version = "5.5.4"
++description = "Messaging library for Python."
++optional = false
++python-versions = ">=3.8"
++files = [
++    {file = "kombu-5.5.4-py3-none-any.whl", hash = "sha256:a12ed0557c238897d8e518f1d1fdf84bd1516c5e305af2dacd85c2015115feb8"},
++    {file = "kombu-5.5.4.tar.gz", hash = "sha256:886600168275ebeada93b888e831352fe578168342f0d1d5833d88ba0d847363"},
++]
++
++[package.dependencies]
++amqp = ">=5.1.1,<6.0.0"
++packaging = "*"
++redis = {version = ">=4.5.2,<4.5.5 || >4.5.5,<5.0.2 || >5.0.2,<=5.2.1", optional = true, markers = "extra == \"redis\""}
++tzdata = {version = ">=2025.2", markers = "python_version >= \"3.9\""}
++vine = "5.1.0"
++
++[package.extras]
++azureservicebus = ["azure-servicebus (>=7.10.0)"]
++azurestoragequeues = ["azure-identity (>=1.12.0)", "azure-storage-queue (>=12.6.0)"]
++confluentkafka = ["confluent-kafka (>=2.2.0)"]
++consul = ["python-consul2 (==0.1.5)"]
++gcpubsub = ["google-cloud-monitoring (>=2.16.0)", "google-cloud-pubsub (>=2.18.4)", "grpcio (==1.67.0)", "protobuf (==4.25.5)"]
++librabbitmq = ["librabbitmq (>=2.0.0)"]
++mongodb = ["pymongo (==4.10.1)"]
++msgpack = ["msgpack (==1.1.0)"]
++pyro = ["pyro4 (==4.82)"]
++qpid = ["qpid-python (>=0.26)", "qpid-tools (>=0.26)"]
++redis = ["redis (>=4.5.2,!=4.5.5,!=5.0.2,<=5.2.1)"]
++slmq = ["softlayer_messaging (>=1.0.3)"]
++sqlalchemy = ["sqlalchemy (>=1.4.48,<2.1)"]
++sqs = ["boto3 (>=1.26.143)", "urllib3 (>=1.26.16)"]
++yaml = ["PyYAML (>=3.10)"]
++zookeeper = ["kazoo (>=2.8.0)"]
++
++[[package]]
++name = "matplotlib-inline"
++version = "0.1.7"
++description = "Inline Matplotlib backend for Jupyter"
++optional = false
++python-versions = ">=3.8"
++files = [
++    {file = "matplotlib_inline-0.1.7-py3-none-any.whl", hash = "sha256:df192d39a4ff8f21b1895d72e6a13f5fcc5099f00fa84384e0ea28c2cc0653ca"},
++    {file = "matplotlib_inline-0.1.7.tar.gz", hash = "sha256:8423b23ec666be3d16e16b60bdd8ac4e86e840ebd1dd11a30b9f117f2fa0ab90"},
++]
++
++[package.dependencies]
++traitlets = "*"
++
++[[package]]
++name = "packaging"
++version = "25.0"
++description = "Core utilities for Python packages"
++optional = false
++python-versions = ">=3.8"
++files = [
++    {file = "packaging-25.0-py3-none-any.whl", hash = "sha256:29572ef2b1f17581046b3a2227d5c611fb25ec70ca1ba8554b24b0e69331a484"},
++    {file = "packaging-25.0.tar.gz", hash = "sha256:d443872c98d677bf60f6a1f2f8c1cb748e8fe762d2bf9d3148b5599295b0fc4f"},
++]
++
++[[package]]
++name = "parso"
++version = "0.8.4"
++description = "A Python Parser"
++optional = false
++python-versions = ">=3.6"
++files = [
++    {file = "parso-0.8.4-py2.py3-none-any.whl", hash = "sha256:a418670a20291dacd2dddc80c377c5c3791378ee1e8d12bffc35420643d43f18"},
++    {file = "parso-0.8.4.tar.gz", hash = "sha256:eb3a7b58240fb99099a345571deecc0f9540ea5f4dd2fe14c2a99d6b281ab92d"},
++]
++
++[package.extras]
++qa = ["flake8 (==5.0.4)", "mypy (==0.971)", "types-setuptools (==67.2.0.1)"]
++testing = ["docopt", "pytest"]
++
++[[package]]
++name = "pexpect"
++version = "4.9.0"
++description = "Pexpect allows easy control of interactive console applications."
++optional = false
++python-versions = "*"
++files = [
++    {file = "pexpect-4.9.0-py2.py3-none-any.whl", hash = "sha256:7236d1e080e4936be2dc3e326cec0af72acf9212a7e1d060210e70a47e253523"},
++    {file = "pexpect-4.9.0.tar.gz", hash = "sha256:ee7d41123f3c9911050ea2c2dac107568dc43b2d3b0c7557a33212c398ead30f"},
++]
++
++[package.dependencies]
++ptyprocess = ">=0.5"
++
++[[package]]
++name = "pickleshare"
++version = "0.7.5"
++description = "Tiny 'shelve'-like database with concurrency support"
++optional = false
++python-versions = "*"
++files = [
++    {file = "pickleshare-0.7.5-py2.py3-none-any.whl", hash = "sha256:9649af414d74d4df115d5d718f82acb59c9d418196b7b4290ed47a12ce62df56"},
++    {file = "pickleshare-0.7.5.tar.gz", hash = "sha256:87683d47965c1da65cdacaf31c8441d12b8044cdec9aca500cd78fc2c683afca"},
++]
++
++[[package]]
++name = "prompt-toolkit"
++version = "3.0.51"
++description = "Library for building powerful interactive command lines in Python"
++optional = false
++python-versions = ">=3.8"
++files = [
++    {file = "prompt_toolkit-3.0.51-py3-none-any.whl", hash = "sha256:52742911fde84e2d423e2f9a4cf1de7d7ac4e51958f648d9540e0fb8db077b07"},
++    {file = "prompt_toolkit-3.0.51.tar.gz", hash = "sha256:931a162e3b27fc90c86f1b48bb1fb2c528c2761475e57c9c06de13311c7b54ed"},
++]
++
++[package.dependencies]
++wcwidth = "*"
++
++[[package]]
++name = "psycopg2-binary"
++version = "2.9.6"
++description = "psycopg2 - Python-PostgreSQL Database Adapter"
++optional = false
++python-versions = ">=3.6"
++files = [
++    {file = "psycopg2-binary-2.9.6.tar.gz", hash = "sha256:1f64dcfb8f6e0c014c7f55e51c9759f024f70ea572fbdef123f85318c297947c"},
++    {file = "psycopg2_binary-2.9.6-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:d26e0342183c762de3276cca7a530d574d4e25121ca7d6e4a98e4f05cb8e4df7"},
++    {file = "psycopg2_binary-2.9.6-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:c48d8f2db17f27d41fb0e2ecd703ea41984ee19362cbce52c097963b3a1b4365"},
++    {file = "psycopg2_binary-2.9.6-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:ffe9dc0a884a8848075e576c1de0290d85a533a9f6e9c4e564f19adf8f6e54a7"},
++    {file = "psycopg2_binary-2.9.6-cp310-cp310-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:8a76e027f87753f9bd1ab5f7c9cb8c7628d1077ef927f5e2446477153a602f2c"},
++    {file = "psycopg2_binary-2.9.6-cp310-cp310-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:6460c7a99fc939b849431f1e73e013d54aa54293f30f1109019c56a0b2b2ec2f"},
++    {file = "psycopg2_binary-2.9.6-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:ae102a98c547ee2288637af07393dd33f440c25e5cd79556b04e3fca13325e5f"},
++    {file = "psycopg2_binary-2.9.6-cp310-cp310-musllinux_1_1_aarch64.whl", hash = "sha256:9972aad21f965599ed0106f65334230ce826e5ae69fda7cbd688d24fa922415e"},
++    {file = "psycopg2_binary-2.9.6-cp310-cp310-musllinux_1_1_i686.whl", hash = "sha256:7a40c00dbe17c0af5bdd55aafd6ff6679f94a9be9513a4c7e071baf3d7d22a70"},
++    {file = "psycopg2_binary-2.9.6-cp310-cp310-musllinux_1_1_ppc64le.whl", hash = "sha256:cacbdc5839bdff804dfebc058fe25684cae322987f7a38b0168bc1b2df703fb1"},
++    {file = "psycopg2_binary-2.9.6-cp310-cp310-musllinux_1_1_x86_64.whl", hash = "sha256:7f0438fa20fb6c7e202863e0d5ab02c246d35efb1d164e052f2f3bfe2b152bd0"},
++    {file = "psycopg2_binary-2.9.6-cp310-cp310-win32.whl", hash = "sha256:b6c8288bb8a84b47e07013bb4850f50538aa913d487579e1921724631d02ea1b"},
++    {file = "psycopg2_binary-2.9.6-cp310-cp310-win_amd64.whl", hash = "sha256:61b047a0537bbc3afae10f134dc6393823882eb263088c271331602b672e52e9"},
++    {file = "psycopg2_binary-2.9.6-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:964b4dfb7c1c1965ac4c1978b0f755cc4bd698e8aa2b7667c575fb5f04ebe06b"},
++    {file = "psycopg2_binary-2.9.6-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:afe64e9b8ea66866a771996f6ff14447e8082ea26e675a295ad3bdbffdd72afb"},
++    {file = "psycopg2_binary-2.9.6-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:15e2ee79e7cf29582ef770de7dab3d286431b01c3bb598f8e05e09601b890081"},
++    {file = "psycopg2_binary-2.9.6-cp311-cp311-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:dfa74c903a3c1f0d9b1c7e7b53ed2d929a4910e272add6700c38f365a6002820"},
++    {file = "psycopg2_binary-2.9.6-cp311-cp311-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:b83456c2d4979e08ff56180a76429263ea254c3f6552cd14ada95cff1dec9bb8"},
++    {file = "psycopg2_binary-2.9.6-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:0645376d399bfd64da57148694d78e1f431b1e1ee1054872a5713125681cf1be"},
++    {file = "psycopg2_binary-2.9.6-cp311-cp311-musllinux_1_1_aarch64.whl", hash = "sha256:e99e34c82309dd78959ba3c1590975b5d3c862d6f279f843d47d26ff89d7d7e1"},
++    {file = "psycopg2_binary-2.9.6-cp311-cp311-musllinux_1_1_i686.whl", hash = "sha256:4ea29fc3ad9d91162c52b578f211ff1c931d8a38e1f58e684c45aa470adf19e2"},
++    {file = "psycopg2_binary-2.9.6-cp311-cp311-musllinux_1_1_ppc64le.whl", hash = "sha256:4ac30da8b4f57187dbf449294d23b808f8f53cad6b1fc3623fa8a6c11d176dd0"},
++    {file = "psycopg2_binary-2.9.6-cp311-cp311-musllinux_1_1_x86_64.whl", hash = "sha256:e78e6e2a00c223e164c417628572a90093c031ed724492c763721c2e0bc2a8df"},
++    {file = "psycopg2_binary-2.9.6-cp311-cp311-win32.whl", hash = "sha256:1876843d8e31c89c399e31b97d4b9725a3575bb9c2af92038464231ec40f9edb"},
++    {file = "psycopg2_binary-2.9.6-cp311-cp311-win_amd64.whl", hash = "sha256:b4b24f75d16a89cc6b4cdff0eb6a910a966ecd476d1e73f7ce5985ff1328e9a6"},
++    {file = "psycopg2_binary-2.9.6-cp36-cp36m-win32.whl", hash = "sha256:498807b927ca2510baea1b05cc91d7da4718a0f53cb766c154c417a39f1820a0"},
++    {file = "psycopg2_binary-2.9.6-cp36-cp36m-win_amd64.whl", hash = "sha256:0d236c2825fa656a2d98bbb0e52370a2e852e5a0ec45fc4f402977313329174d"},
++    {file = "psycopg2_binary-2.9.6-cp37-cp37m-macosx_10_9_x86_64.whl", hash = "sha256:34b9ccdf210cbbb1303c7c4db2905fa0319391bd5904d32689e6dd5c963d2ea8"},
++    {file = "psycopg2_binary-2.9.6-cp37-cp37m-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:84d2222e61f313c4848ff05353653bf5f5cf6ce34df540e4274516880d9c3763"},
++    {file = "psycopg2_binary-2.9.6-cp37-cp37m-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:30637a20623e2a2eacc420059be11527f4458ef54352d870b8181a4c3020ae6b"},
++    {file = "psycopg2_binary-2.9.6-cp37-cp37m-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:8122cfc7cae0da9a3077216528b8bb3629c43b25053284cc868744bfe71eb141"},
++    {file = "psycopg2_binary-2.9.6-cp37-cp37m-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:38601cbbfe600362c43714482f43b7c110b20cb0f8172422c616b09b85a750c5"},
++    {file = "psycopg2_binary-2.9.6-cp37-cp37m-musllinux_1_1_aarch64.whl", hash = "sha256:c7e62ab8b332147a7593a385d4f368874d5fe4ad4e341770d4983442d89603e3"},
++    {file = "psycopg2_binary-2.9.6-cp37-cp37m-musllinux_1_1_i686.whl", hash = "sha256:2ab652e729ff4ad76d400df2624d223d6e265ef81bb8aa17fbd63607878ecbee"},
++    {file = "psycopg2_binary-2.9.6-cp37-cp37m-musllinux_1_1_ppc64le.whl", hash = "sha256:c83a74b68270028dc8ee74d38ecfaf9c90eed23c8959fca95bd703d25b82c88e"},
++    {file = "psycopg2_binary-2.9.6-cp37-cp37m-musllinux_1_1_x86_64.whl", hash = "sha256:d4e6036decf4b72d6425d5b29bbd3e8f0ff1059cda7ac7b96d6ac5ed34ffbacd"},
++    {file = "psycopg2_binary-2.9.6-cp37-cp37m-win32.whl", hash = "sha256:a8c28fd40a4226b4a84bdf2d2b5b37d2c7bd49486b5adcc200e8c7ec991dfa7e"},
++    {file = "psycopg2_binary-2.9.6-cp37-cp37m-win_amd64.whl", hash = "sha256:51537e3d299be0db9137b321dfb6a5022caaab275775680e0c3d281feefaca6b"},
++    {file = "psycopg2_binary-2.9.6-cp38-cp38-macosx_10_9_x86_64.whl", hash = "sha256:cf4499e0a83b7b7edcb8dabecbd8501d0d3a5ef66457200f77bde3d210d5debb"},
++    {file = "psycopg2_binary-2.9.6-cp38-cp38-macosx_11_0_arm64.whl", hash = "sha256:7e13a5a2c01151f1208d5207e42f33ba86d561b7a89fca67c700b9486a06d0e2"},
++    {file = "psycopg2_binary-2.9.6-cp38-cp38-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:0e0f754d27fddcfd74006455b6e04e6705d6c31a612ec69ddc040a5468e44b4e"},
++    {file = "psycopg2_binary-2.9.6-cp38-cp38-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:d57c3fd55d9058645d26ae37d76e61156a27722097229d32a9e73ed54819982a"},
++    {file = "psycopg2_binary-2.9.6-cp38-cp38-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:71f14375d6f73b62800530b581aed3ada394039877818b2d5f7fc77e3bb6894d"},
++    {file = "psycopg2_binary-2.9.6-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:441cc2f8869a4f0f4bb408475e5ae0ee1f3b55b33f350406150277f7f35384fc"},
++    {file = "psycopg2_binary-2.9.6-cp38-cp38-musllinux_1_1_aarch64.whl", hash = "sha256:65bee1e49fa6f9cf327ce0e01c4c10f39165ee76d35c846ade7cb0ec6683e303"},
++    {file = "psycopg2_binary-2.9.6-cp38-cp38-musllinux_1_1_i686.whl", hash = "sha256:af335bac6b666cc6aea16f11d486c3b794029d9df029967f9938a4bed59b6a19"},
++    {file = "psycopg2_binary-2.9.6-cp38-cp38-musllinux_1_1_ppc64le.whl", hash = "sha256:cfec476887aa231b8548ece2e06d28edc87c1397ebd83922299af2e051cf2827"},
++    {file = "psycopg2_binary-2.9.6-cp38-cp38-musllinux_1_1_x86_64.whl", hash = "sha256:65c07febd1936d63bfde78948b76cd4c2a411572a44ac50719ead41947d0f26b"},
++    {file = "psycopg2_binary-2.9.6-cp38-cp38-win32.whl", hash = "sha256:4dfb4be774c4436a4526d0c554af0cc2e02082c38303852a36f6456ece7b3503"},
++    {file = "psycopg2_binary-2.9.6-cp38-cp38-win_amd64.whl", hash = "sha256:02c6e3cf3439e213e4ee930308dc122d6fb4d4bea9aef4a12535fbd605d1a2fe"},
++    {file = "psycopg2_binary-2.9.6-cp39-cp39-macosx_10_9_x86_64.whl", hash = "sha256:e9182eb20f41417ea1dd8e8f7888c4d7c6e805f8a7c98c1081778a3da2bee3e4"},
++    {file = "psycopg2_binary-2.9.6-cp39-cp39-macosx_11_0_arm64.whl", hash = "sha256:8a6979cf527e2603d349a91060f428bcb135aea2be3201dff794813256c274f1"},
++    {file = "psycopg2_binary-2.9.6-cp39-cp39-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:8338a271cb71d8da40b023a35d9c1e919eba6cbd8fa20a54b748a332c355d896"},
++    {file = "psycopg2_binary-2.9.6-cp39-cp39-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:e3ed340d2b858d6e6fb5083f87c09996506af483227735de6964a6100b4e6a54"},
++    {file = "psycopg2_binary-2.9.6-cp39-cp39-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:f81e65376e52f03422e1fb475c9514185669943798ed019ac50410fb4c4df232"},
++    {file = "psycopg2_binary-2.9.6-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:bfb13af3c5dd3a9588000910178de17010ebcccd37b4f9794b00595e3a8ddad3"},
++    {file = "psycopg2_binary-2.9.6-cp39-cp39-musllinux_1_1_aarch64.whl", hash = "sha256:4c727b597c6444a16e9119386b59388f8a424223302d0c06c676ec8b4bc1f963"},
++    {file = "psycopg2_binary-2.9.6-cp39-cp39-musllinux_1_1_i686.whl", hash = "sha256:4d67fbdaf177da06374473ef6f7ed8cc0a9dc640b01abfe9e8a2ccb1b1402c1f"},
++    {file = "psycopg2_binary-2.9.6-cp39-cp39-musllinux_1_1_ppc64le.whl", hash = "sha256:0892ef645c2fabb0c75ec32d79f4252542d0caec1d5d949630e7d242ca4681a3"},
++    {file = "psycopg2_binary-2.9.6-cp39-cp39-musllinux_1_1_x86_64.whl", hash = "sha256:02c0f3757a4300cf379eb49f543fb7ac527fb00144d39246ee40e1df684ab514"},
++    {file = "psycopg2_binary-2.9.6-cp39-cp39-win32.whl", hash = "sha256:c3dba7dab16709a33a847e5cd756767271697041fbe3fe97c215b1fc1f5c9848"},
++    {file = "psycopg2_binary-2.9.6-cp39-cp39-win_amd64.whl", hash = "sha256:f6a88f384335bb27812293fdb11ac6aee2ca3f51d3c7820fe03de0a304ab6249"},
++]
++
++[[package]]
++name = "ptyprocess"
++version = "0.7.0"
++description = "Run a subprocess in a pseudo terminal"
++optional = false
++python-versions = "*"
++files = [
++    {file = "ptyprocess-0.7.0-py2.py3-none-any.whl", hash = "sha256:4b41f3967fce3af57cc7e94b888626c18bf37a083e3651ca8feeb66d492fef35"},
++    {file = "ptyprocess-0.7.0.tar.gz", hash = "sha256:5c5d0a3b48ceee0b48485e0c26037c0acd7d29765ca3fbb5cb3831d347423220"},
++]
++
++[[package]]
++name = "pure-eval"
++version = "0.2.3"
++description = "Safely evaluate AST nodes without side effects"
++optional = false
++python-versions = "*"
++files = [
++    {file = "pure_eval-0.2.3-py3-none-any.whl", hash = "sha256:1db8e35b67b3d218d818ae653e27f06c3aa420901fa7b081ca98cbedc874e0d0"},
++    {file = "pure_eval-0.2.3.tar.gz", hash = "sha256:5f4e983f40564c576c7c8635ae88db5956bb2229d7e9237d03b3c0b0190eaf42"},
++]
++
++[package.extras]
++tests = ["pytest"]
++
++[[package]]
++name = "pycparser"
++version = "2.22"
++description = "C parser in Python"
++optional = false
++python-versions = ">=3.8"
++files = [
++    {file = "pycparser-2.22-py3-none-any.whl", hash = "sha256:c3702b6d3dd8c7abc1afa565d7e63d53a1d0bd86cdc24edd75470f4de499cfcc"},
++    {file = "pycparser-2.22.tar.gz", hash = "sha256:491c8be9c040f5390f5bf44a5b07752bd07f56edf992381b05c701439eec10f6"},
++]
++
++[[package]]
++name = "pygments"
++version = "2.19.1"
++description = "Pygments is a syntax highlighting package written in Python."
++optional = false
++python-versions = ">=3.8"
++files = [
++    {file = "pygments-2.19.1-py3-none-any.whl", hash = "sha256:9ea1544ad55cecf4b8242fab6dd35a93bbce657034b0611ee383099054ab6d8c"},
++    {file = "pygments-2.19.1.tar.gz", hash = "sha256:61c16d2a8576dc0649d9f39e089b5f02bcd27fba10d8fb4dcc28173f7a45151f"},
++]
++
++[package.extras]
++windows-terminal = ["colorama (>=0.4.6)"]
++
++[[package]]
++name = "pyjwt"
++version = "2.10.1"
++description = "JSON Web Token implementation in Python"
++optional = false
++python-versions = ">=3.9"
++files = [
++    {file = "PyJWT-2.10.1-py3-none-any.whl", hash = "sha256:dcdd193e30abefd5debf142f9adfcdd2b58004e644f25406ffaebd50bd98dacb"},
++    {file = "pyjwt-2.10.1.tar.gz", hash = "sha256:3cc5772eb20009233caf06e9d8a0577824723b44e6648ee0a2aedb6cf9381953"},
++]
++
++[package.extras]
++crypto = ["cryptography (>=3.4.0)"]
++dev = ["coverage[toml] (==5.0.4)", "cryptography (>=3.4.0)", "pre-commit", "pytest (>=6.0.0,<7.0.0)", "sphinx", "sphinx-rtd-theme", "zope.interface"]
++docs = ["sphinx", "sphinx-rtd-theme", "zope.interface"]
++tests = ["coverage[toml] (==5.0.4)", "pytest (>=6.0.0,<7.0.0)"]
++
++[[package]]
++name = "python-crontab"
++version = "3.2.0"
++description = "Python Crontab API"
++optional = false
++python-versions = "*"
++files = [
++    {file = "python_crontab-3.2.0-py3-none-any.whl", hash = "sha256:82cb9b6a312d41ff66fd3caf3eed7115c28c195bfb50711bc2b4b9592feb9fe5"},
++    {file = "python_crontab-3.2.0.tar.gz", hash = "sha256:40067d1dd39ade3460b2ad8557c7651514cd3851deffff61c5c60e1227c5c36b"},
++]
++
++[package.dependencies]
++python-dateutil = "*"
++
++[package.extras]
++cron-description = ["cron-descriptor"]
++cron-schedule = ["croniter"]
++
++[[package]]
++name = "python-dateutil"
++version = "2.9.0.post0"
++description = "Extensions to the standard Python datetime module"
++optional = false
++python-versions = "!=3.0.*,!=3.1.*,!=3.2.*,>=2.7"
++files = [
++    {file = "python-dateutil-2.9.0.post0.tar.gz", hash = "sha256:37dd54208da7e1cd875388217d5e00ebd4179249f90fb72437e91a35459a0ad3"},
++    {file = "python_dateutil-2.9.0.post0-py2.py3-none-any.whl", hash = "sha256:a8b2bc7bffae282281c8140a97d3aa9c14da0b136dfe83f850eea9a5f7470427"},
++]
++
++[package.dependencies]
++six = ">=1.5"
++
++[[package]]
++name = "python-dotenv"
++version = "1.0.0"
++description = "Read key-value pairs from a .env file and set them as environment variables"
++optional = false
++python-versions = ">=3.8"
++files = [
++    {file = "python-dotenv-1.0.0.tar.gz", hash = "sha256:a8df96034aae6d2d50a4ebe8216326c61c3eb64836776504fcca410e5937a3ba"},
++    {file = "python_dotenv-1.0.0-py3-none-any.whl", hash = "sha256:f5971a9226b701070a4bf2c38c89e5a3f0d64de8debda981d1db98583009122a"},
++]
++
++[package.extras]
++cli = ["click (>=5.0)"]
++
++[[package]]
++name = "redis"
++version = "5.2.1"
++description = "Python client for Redis database and key-value store"
++optional = false
++python-versions = ">=3.8"
++files = [
++    {file = "redis-5.2.1-py3-none-any.whl", hash = "sha256:ee7e1056b9aea0f04c6c2ed59452947f34c4940ee025f5dd83e6a6418b6989e4"},
++    {file = "redis-5.2.1.tar.gz", hash = "sha256:16f2e22dff21d5125e8481515e386711a34cbec50f0e44413dd7d9c060a54e0f"},
++]
++
++[package.dependencies]
++async-timeout = {version = ">=4.0.3", markers = "python_full_version < \"3.11.3\""}
++
++[package.extras]
++hiredis = ["hiredis (>=3.0.0)"]
++ocsp = ["cryptography (>=36.0.1)", "pyopenssl (==23.2.1)", "requests (>=2.31.0)"]
++
++[[package]]
++name = "requests"
++version = "2.31.0"
++description = "Python HTTP for Humans."
++optional = false
++python-versions = ">=3.7"
++files = [
++    {file = "requests-2.31.0-py3-none-any.whl", hash = "sha256:58cd2187c01e70e6e26505bca751777aa9f2ee0b7f4300988b709f44e013003f"},
++    {file = "requests-2.31.0.tar.gz", hash = "sha256:942c5a758f98d790eaed1a29cb6eefc7ffb0d1cf7af05c3d2791656dbd6ad1e1"},
++]
++
++[package.dependencies]
++certifi = ">=2017.4.17"
++charset-normalizer = ">=2,<4"
++idna = ">=2.5,<4"
++urllib3 = ">=1.21.1,<3"
++
++[package.extras]
++socks = ["PySocks (>=1.5.6,!=1.5.7)"]
++use-chardet-on-py3 = ["chardet (>=3.0.2,<6)"]
++
++[[package]]
++name = "six"
++version = "1.17.0"
++description = "Python 2 and 3 compatibility utilities"
++optional = false
++python-versions = "!=3.0.*,!=3.1.*,!=3.2.*,>=2.7"
++files = [
++    {file = "six-1.17.0-py2.py3-none-any.whl", hash = "sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274"},
++    {file = "six-1.17.0.tar.gz", hash = "sha256:ff70335d468e7eb6ec65b95b99d3a2836546063f63acc5171de367e834932a81"},
++]
++
++[[package]]
++name = "sqlparse"
++version = "0.5.3"
++description = "A non-validating SQL parser."
++optional = false
++python-versions = ">=3.8"
++files = [
++    {file = "sqlparse-0.5.3-py3-none-any.whl", hash = "sha256:cf2196ed3418f3ba5de6af7e82c694a9fbdbfecccdfc72e281548517081f16ca"},
++    {file = "sqlparse-0.5.3.tar.gz", hash = "sha256:09f67787f56a0b16ecdbde1bfc7f5d9c3371ca683cfeaa8e6ff60b4807ec9272"},
++]
++
++[package.extras]
++dev = ["build", "hatch"]
++doc = ["sphinx"]
++
++[[package]]
++name = "stack-data"
++version = "0.6.3"
++description = "Extract data from python stack frames and tracebacks for informative displays"
++optional = false
++python-versions = "*"
++files = [
++    {file = "stack_data-0.6.3-py3-none-any.whl", hash = "sha256:d5558e0c25a4cb0853cddad3d77da9891a08cb85dd9f9f91b9f8cd66e511e695"},
++    {file = "stack_data-0.6.3.tar.gz", hash = "sha256:836a778de4fec4dcd1dcd89ed8abff8a221f58308462e1c4aa2a3cf30148f0b9"},
++]
++
++[package.dependencies]
++asttokens = ">=2.1.0"
++executing = ">=1.2.0"
++pure-eval = "*"
++
++[package.extras]
++tests = ["cython", "littleutils", "pygments", "pytest", "typeguard"]
++
++[[package]]
++name = "traitlets"
++version = "5.14.3"
++description = "Traitlets Python configuration system"
++optional = false
++python-versions = ">=3.8"
++files = [
++    {file = "traitlets-5.14.3-py3-none-any.whl", hash = "sha256:b74e89e397b1ed28cc831db7aea759ba6640cb3de13090ca145426688ff1ac4f"},
++    {file = "traitlets-5.14.3.tar.gz", hash = "sha256:9ed0579d3502c94b4b3732ac120375cda96f923114522847de4b3bb98b96b6b7"},
++]
++
++[package.extras]
++docs = ["myst-parser", "pydata-sphinx-theme", "sphinx"]
++test = ["argcomplete (>=3.0.3)", "mypy (>=1.7.0)", "pre-commit", "pytest (>=7.0,<8.2)", "pytest-mock", "pytest-mypy-testing"]
++
++[[package]]
++name = "typing-extensions"
++version = "4.13.2"
++description = "Backported and Experimental Type Hints for Python 3.8+"
++optional = false
++python-versions = ">=3.8"
++files = [
++    {file = "typing_extensions-4.13.2-py3-none-any.whl", hash = "sha256:a439e7c04b49fec3e5d3e2beaa21755cadbbdc391694e28ccdd36ca4a1408f8c"},
++    {file = "typing_extensions-4.13.2.tar.gz", hash = "sha256:e6c81219bd689f51865d9e372991c540bda33a0379d5573cddb9a3a23f7caaef"},
++]
++
++[[package]]
++name = "tzdata"
++version = "2025.2"
++description = "Provider of IANA time zone data"
++optional = false
++python-versions = ">=2"
++files = [
++    {file = "tzdata-2025.2-py2.py3-none-any.whl", hash = "sha256:1a403fada01ff9221ca8044d701868fa132215d84beb92242d9acd2147f667a8"},
++    {file = "tzdata-2025.2.tar.gz", hash = "sha256:b60a638fcc0daffadf82fe0f57e53d06bdec2f36c4df66280ae79bce6bd6f2b9"},
++]
++
++[[package]]
++name = "urllib3"
++version = "2.5.0"
++description = "HTTP library with thread-safe connection pooling, file post, and more."
++optional = false
++python-versions = ">=3.9"
++files = [
++    {file = "urllib3-2.5.0-py3-none-any.whl", hash = "sha256:e6b01673c0fa6a13e374b50871808eb3bf7046c4b125b216f6bf1cc604cff0dc"},
++    {file = "urllib3-2.5.0.tar.gz", hash = "sha256:3fc47733c7e419d4bc3f6b3dc2b4f890bb743906a30d56ba4a5bfa4bbff92760"},
++]
++
++[package.extras]
++brotli = ["brotli (>=1.0.9)", "brotlicffi (>=0.8.0)"]
++h2 = ["h2 (>=4,<5)"]
++socks = ["pysocks (>=1.5.6,!=1.5.7,<2.0)"]
++zstd = ["zstandard (>=0.18.0)"]
++
++[[package]]
++name = "vine"
++version = "5.1.0"
++description = "Python promises."
++optional = false
++python-versions = ">=3.6"
++files = [
++    {file = "vine-5.1.0-py3-none-any.whl", hash = "sha256:40fdf3c48b2cfe1c38a49e9ae2da6fda88e4794c810050a728bd7413811fb1dc"},
++    {file = "vine-5.1.0.tar.gz", hash = "sha256:8b62e981d35c41049211cf62a0a1242d8c1ee9bd15bb196ce38aefd6799e61e0"},
++]
++
++[[package]]
++name = "wcwidth"
++version = "0.2.13"
++description = "Measures the displayed width of unicode strings in a terminal"
++optional = false
++python-versions = "*"
++files = [
++    {file = "wcwidth-0.2.13-py2.py3-none-any.whl", hash = "sha256:3da69048e4540d84af32131829ff948f1e022c1c6bdb8d6102117aac784f6859"},
++    {file = "wcwidth-0.2.13.tar.gz", hash = "sha256:72ea0c06399eb286d978fdedb6923a9eb47e1c486ce63e9b4e64fc18303972b5"},
++]
++
++[metadata]
++lock-version = "2.0"
++python-versions = "=3.10.13"
++content-hash = "1cdb75fe5be8e62776043d220a95385ee7a16d654fe7d70a90db0d89e4e3b0a2"
+diff --git a/pyproject.toml b/pyproject.toml
+new file mode 100644
+index 0000000..30787e8
+--- /dev/null
++++ b/pyproject.toml
+@@ -0,0 +1,29 @@
++[tool.poetry]
++name = "familiarity-playlist-backend"
++version = "0.1.0"
++description = ""
++authors = ["Pony0w0 <pony8674312@gmail.com>"]
++readme = "README.md"
++
++[tool.poetry.dependencies]
++python = "=3.10.13"
++django = "5.2.2"
++django-redis = "5.0.0"
++djangorestframework = "3.15.2"
++django-filter = "24.3"
++django-cryptography = "1.1"
++django-extensions = "4.1"
++psycopg2-binary = "2.9.6"
++python-dotenv = "1.0.0"
++django-cors-headers = "4.6.0"
++ipython = "8.10"
++gunicorn = "23.0.0"
++djangorestframework-simplejwt = "5.4.0"
++requests = "2.31.0"
++celery = {version = "5.5.3", extras = ["redis"]}
++django-celery-beat = "2.8.1"
++
++
++[build-system]
++requires = ["poetry-core"]
++build-backend = "poetry.core.masonry.api"
+diff --git a/requirements.txt b/requirements.txt
+new file mode 100644
+index 0000000..4fb2772
+--- /dev/null
++++ b/requirements.txt
+@@ -0,0 +1,64 @@
++amqp==5.3.1 ; python_full_version == "3.10.13"
++appnope==0.1.4 ; sys_platform == "darwin" and python_full_version == "3.10.13"
++asgiref==3.8.1 ; python_full_version == "3.10.13"
++asttokens==3.0.0 ; python_full_version == "3.10.13"
++async-timeout==5.0.1 ; python_full_version == "3.10.13"
++backcall==0.2.0 ; python_full_version == "3.10.13"
++billiard==4.2.1 ; python_full_version == "3.10.13"
++celery==5.5.3 ; python_full_version == "3.10.13"
++celery[redis]==5.5.3 ; python_full_version == "3.10.13"
++certifi==2025.6.15 ; python_full_version == "3.10.13"
++cffi==1.17.1 ; platform_python_implementation != "PyPy" and python_full_version == "3.10.13"
++charset-normalizer==3.4.2 ; python_full_version == "3.10.13"
++click-didyoumean==0.3.1 ; python_full_version == "3.10.13"
++click-plugins==1.1.1.2 ; python_full_version == "3.10.13"
++click-repl==0.3.0 ; python_full_version == "3.10.13"
++click==8.2.1 ; python_full_version == "3.10.13"
++colorama==0.4.6 ; python_full_version == "3.10.13" and (sys_platform == "win32" or platform_system == "Windows")
++cron-descriptor==1.4.5 ; python_full_version == "3.10.13"
++cryptography==45.0.2 ; python_full_version == "3.10.13"
++decorator==5.2.1 ; python_full_version == "3.10.13"
++django-appconf==1.1.0 ; python_full_version == "3.10.13"
++django-celery-beat==2.8.1 ; python_full_version == "3.10.13"
++django-cors-headers==4.6.0 ; python_full_version == "3.10.13"
++django-cryptography==1.1 ; python_full_version == "3.10.13"
++django-extensions==4.1 ; python_full_version == "3.10.13"
++django-filter==24.3 ; python_full_version == "3.10.13"
++django-redis==5.0.0 ; python_full_version == "3.10.13"
++django-timezone-field==7.1 ; python_full_version == "3.10.13"
++django==5.2.2 ; python_full_version == "3.10.13"
++djangorestframework-simplejwt==5.4.0 ; python_full_version == "3.10.13"
++djangorestframework==3.15.2 ; python_full_version == "3.10.13"
++executing==2.2.0 ; python_full_version == "3.10.13"
++gunicorn==23.0.0 ; python_full_version == "3.10.13"
++idna==3.10 ; python_full_version == "3.10.13"
++ipython==8.10.0 ; python_full_version == "3.10.13"
++jedi==0.19.2 ; python_full_version == "3.10.13"
++kombu==5.5.4 ; python_full_version == "3.10.13"
++kombu[redis]==5.5.4 ; python_full_version == "3.10.13"
++matplotlib-inline==0.1.7 ; python_full_version == "3.10.13"
++packaging==25.0 ; python_full_version == "3.10.13"
++parso==0.8.4 ; python_full_version == "3.10.13"
++pexpect==4.9.0 ; sys_platform != "win32" and python_full_version == "3.10.13"
++pickleshare==0.7.5 ; python_full_version == "3.10.13"
++prompt-toolkit==3.0.51 ; python_full_version == "3.10.13"
++psycopg2-binary==2.9.6 ; python_full_version == "3.10.13"
++ptyprocess==0.7.0 ; sys_platform != "win32" and python_full_version == "3.10.13"
++pure-eval==0.2.3 ; python_full_version == "3.10.13"
++pycparser==2.22 ; platform_python_implementation != "PyPy" and python_full_version == "3.10.13"
++pygments==2.19.1 ; python_full_version == "3.10.13"
++pyjwt==2.10.1 ; python_full_version == "3.10.13"
++python-crontab==3.2.0 ; python_full_version == "3.10.13"
++python-dateutil==2.9.0.post0 ; python_full_version == "3.10.13"
++python-dotenv==1.0.0 ; python_full_version == "3.10.13"
++redis==5.2.1 ; python_full_version == "3.10.13"
++requests==2.31.0 ; python_full_version == "3.10.13"
++six==1.17.0 ; python_full_version == "3.10.13"
++sqlparse==0.5.3 ; python_full_version == "3.10.13"
++stack-data==0.6.3 ; python_full_version == "3.10.13"
++traitlets==5.14.3 ; python_full_version == "3.10.13"
++typing-extensions==4.13.2 ; python_full_version == "3.10.13"
++tzdata==2025.2 ; python_full_version == "3.10.13"
++urllib3==2.5.0 ; python_full_version == "3.10.13"
++vine==5.1.0 ; python_full_version == "3.10.13"
++wcwidth==0.2.13 ; python_full_version == "3.10.13"
+diff --git a/scripts/__init__.py b/scripts/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/scripts/base.py b/scripts/base.py
+new file mode 100644
+index 0000000..45f9506
+--- /dev/null
++++ b/scripts/base.py
+@@ -0,0 +1,19 @@
++from abc import ABC, abstractmethod
++
++from django.db import transaction
++
++
++class BaseScript(ABC):
++    @abstractmethod
++    def run(self):
++        raise NotImplementedError
++
++    def execute(self):
++        with transaction.atomic():
++            try:
++                print(f"🚀 Running {self.__class__.__name__}...")
++                self.run()
++                print('✅ Script finished successfully.')
++            except Exception as e:
++                print('❌ Error occurred during script execution.')
++                raise e
+diff --git a/utils/__init__.py b/utils/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/utils/constants.py b/utils/constants.py
+new file mode 100644
+index 0000000..b65e808
+--- /dev/null
++++ b/utils/constants.py
+@@ -0,0 +1,42 @@
++class ResponseCode:
++    # 1000–1999 系統層級／通用回應
++    # 2000–2999 成功／一般操作
++    # 3000–3999 驗證 & 授權（Authentication）
++    # 3000：未授權；3001：Token 過期
++    # 4000–4999 用戶請求錯誤（Client Error）
++    # 5000–5999 伺服器錯誤（Server Error）
++    # 6000–6999 外部服務錯誤／第三方 API
++
++    SUCCESS = 2000
++
++    UNAUTHORIZED = 3000
++    TOKEN_EXPIRED = 3001
++    PERMISSION_DENIED = 3002
++
++    INVALID_REQUEST = 4000
++    METHOD_NOT_ALLOWED = 4001
++    GENERAL_NOT_FOUND = 4002
++    USER_NOT_FOUND = 4003
++
++    INTERNAL_ERROR = 5000
++
++    EXTERNAL_API_ERROR = 6000
++    EXTERNAL_API_AUTHORIZATION_ERROR = 6001
++    EXTERNAL_API_ACCESS_TOKEN_NOT_FOUND = 6002
++
++
++class ResponseMessage:
++    SUCCESS = 'success'
++
++    UNAUTHORIZED = 'unauthorized'
++    TOKEN_EXPIRED = 'token expired'
++    PERMISSION_DENIED = 'permission denied'
++
++    INVALID_REQUEST = 'invalid request'
++    USER_NOT_FOUND = 'user not found'
++
++    INTERNAL_ERROR = 'internal error'
++
++    EXTERNAL_API_ERROR = 'external api error'
++    EXTERNAL_API_AUTHORIZATION_ERROR = 'external api authorization error'
++    EXTERNAL_API_ACCESS_TOKEN_NOT_FOUND = 'external api access_token not found'
+diff --git a/utils/encrypt.py b/utils/encrypt.py
+new file mode 100644
+index 0000000..8c5bcde
+--- /dev/null
++++ b/utils/encrypt.py
+@@ -0,0 +1,17 @@
++from cryptography.fernet import Fernet
++from django.conf import settings
++
++
++def get_fernet():
++    key = settings.MEMBER_API_TOKEN_SECRET_KEY
++    return Fernet(key)
++
++
++def encrypt_value(value: str) -> str:
++    f = get_fernet()
++    return f.encrypt(value.encode()).decode()
++
++
++def decrypt_value(token: str) -> str:
++    f = get_fernet()
++    return f.decrypt(token.encode()).decode()
+diff --git a/utils/exceptions.py b/utils/exceptions.py
+new file mode 100644
+index 0000000..fc56df5
+--- /dev/null
++++ b/utils/exceptions.py
+@@ -0,0 +1,26 @@
++from rest_framework import status
++from rest_framework.exceptions import NotAuthenticated, PermissionDenied
++from rest_framework.views import exception_handler
++
++from utils.constants import ResponseCode, ResponseMessage
++from utils.response import APIFailedResponse
++
++
++def custom_exception_handler(exc, context):
++    # 先呼叫 DRF 預設的 exception handler
++    response = exception_handler(exc, context)
++
++    # 權限失敗
++    if isinstance(exc, (PermissionDenied, NotAuthenticated)):
++        return APIFailedResponse(
++            code=ResponseCode.PERMISSION_DENIED,
++            msg=ResponseMessage.PERMISSION_DENIED,
++            status_code=status.HTTP_403_FORBIDDEN,
++        )
++
++    # 其他錯誤也可以自訂
++    # if isinstance(exc, SomeOtherException):
++    #     return APIFailedResponse(...)
++
++    # 其他情況 fallback 到預設
++    return response
+diff --git a/utils/mixins.py b/utils/mixins.py
+new file mode 100644
+index 0000000..a664837
+--- /dev/null
++++ b/utils/mixins.py
+@@ -0,0 +1,58 @@
++from rest_framework import status
++from rest_framework.response import Response as DRFResponse
++
++from utils.constants import ResponseCode
++from utils.response import APIFailedResponse
++
++
++class ResponseFormatMixin:
++    """
++    1) 如果 view 已经返回了 APISuccessResponse / APIFailedResponse（payload 中含 code），直接放行
++    2) 否则，只有在 status_code >= 400 时，自动把它转换成 APIFailedResponse
++    3) status_code < 400 的情况则什么都不做，视为开发者自己调用了 APISuccessResponse
++    """
++
++    def finalize_response(self, request, response, *args, **kwargs):
++        if isinstance(response, DRFResponse):
++            raw_data = response.data or {}
++            status_code = response.status_code
++
++            if isinstance(raw_data, dict) and 'code' in raw_data:
++                return super().finalize_response(request, response, *args, **kwargs)
++
++            if status_code >= 400:
++                if status_code == status.HTTP_400_BAD_REQUEST and isinstance(
++                    raw_data, dict
++                ):
++                    return super().finalize_response(
++                        request,
++                        APIFailedResponse(
++                            code=ResponseCode.INVALID_REQUEST,
++                            msg='[Default] 驗證失敗',
++                            data=raw_data,
++                            status_code=status_code,
++                        ),
++                        *args,
++                        **kwargs
++                    )
++
++                mapping = {
++                    status.HTTP_401_UNAUTHORIZED: ResponseCode.UNAUTHORIZED,
++                    status.HTTP_403_FORBIDDEN: ResponseCode.PERMISSION_DENIED,
++                    status.HTTP_404_NOT_FOUND: ResponseCode.GENERAL_NOT_FOUND,
++                    status.HTTP_405_METHOD_NOT_ALLOWED: ResponseCode.METHOD_NOT_ALLOWED,
++                }
++                code = mapping.get(status_code, ResponseCode.INTERNAL_ERROR)
++                if isinstance(raw_data, dict):
++                    msg = raw_data.get('detail', '')
++                else:
++                    msg = str(raw_data)
++
++                return super().finalize_response(
++                    request,
++                    APIFailedResponse(code=code, msg=msg, status_code=status_code),
++                    *args,
++                    **kwargs
++                )
++
++        return super().finalize_response(request, response, *args, **kwargs)
+diff --git a/utils/response.py b/utils/response.py
+new file mode 100644
+index 0000000..3360423
+--- /dev/null
++++ b/utils/response.py
+@@ -0,0 +1,33 @@
++from rest_framework import status
++from rest_framework.response import Response
++
++from utils.constants import ResponseCode, ResponseMessage
++
++
++class APISuccessResponse(Response):
++    def __init__(
++        self,
++        *,
++        code: int = ResponseCode.SUCCESS,
++        data: dict = None,
++        msg: str = ResponseMessage.SUCCESS,
++        status_code: int = status.HTTP_200_OK,
++        headers: dict = None,
++    ):
++        payload = {'code': code, 'data': data or {}, 'msg': msg}
++
++        super().__init__(data=payload, status=status_code, headers=headers)
++
++
++class APIFailedResponse(Response):
++    def __init__(
++        self,
++        *,
++        code: int,
++        msg: str,
++        details: dict = None,
++        status_code: int = status.HTTP_400_BAD_REQUEST,
++        **kwargs,
++    ):
++        payload = {'code': code, 'data': {}, 'msg': msg, 'details': details}
++        super().__init__(data=payload, status=status_code)
+diff --git a/utils/utils.py b/utils/utils.py
+new file mode 100644
+index 0000000..b7364c7
+--- /dev/null
++++ b/utils/utils.py
+@@ -0,0 +1,8 @@
++import importlib
++
++
++def get_class_from_path(path):
++    module_path, class_name = path.rsplit('.', 1)
++    module = importlib.import_module(module_path)
++    handler_class = getattr(module, class_name)
++    return handler_class
+diff --git a/utils/views.py b/utils/views.py
+new file mode 100644
+index 0000000..8bce3f7
+--- /dev/null
++++ b/utils/views.py
+@@ -0,0 +1,12 @@
++from rest_framework.views import APIView
++from rest_framework.viewsets import GenericViewSet
++
++from utils.mixins import ResponseFormatMixin
++
++
++class BaseAPIView(ResponseFormatMixin, APIView):
++    pass
++
++
++class BaseGenericViewSet(ResponseFormatMixin, GenericViewSet):
++    pass
