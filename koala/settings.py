@@ -175,10 +175,23 @@ STATIC_URL = 'static/'
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
+
+# Redis
+redis_options = {
+    'COMPRESSOR': 'django_redis.compressors.zlib.ZlibCompressor',
+    'IGNORE_EXCEPTIONS': True,
+}
+
+if ENV == 'local':
+    REDIS_PROTOCOL = 'redis'
+else:
+    REDIS_PROTOCOL = 'rediss'
+    redis_options['CONNECTION_POOL_KWARGS'] = {'ssl_cert_reqs': None}
+
 REDIS_HOST = os.environ.get('REDIS_HOST', 'koala-redis')
 REDIS_PORT = os.environ.get('REDIS_PORT', '6379')
-REDIS_DB = os.environ.get('REDIS_DB', '1')
-REDIS_CACHE_LOCATION = f'redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}'
+REDIS_DB = os.environ.get('REDIS_DB', '0')
+REDIS_CACHE_LOCATION = f'{REDIS_PROTOCOL}://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}'
 
 
 DEFAULT_ALIAS = 'default'
@@ -188,15 +201,13 @@ CACHES = {
         'BACKEND': 'django_redis.cache.RedisCache',
         'LOCATION': REDIS_CACHE_LOCATION,
         'TIMEOUT': 259200,
-        'OPTIONS': {
-            'COMPRESSOR': 'django_redis.compressors.zlib.ZlibCompressor',
-            'IGNORE_EXCEPTIONS': True,
-        },
+        'OPTIONS': redis_options,
     },
 }
 
 SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
 SESSION_CACHE_ALIAS = 'default'
+
 
 # RabbitMQ
 RABBITMQ_HOST = os.environ.get('RABBITMQ_HOST', 'koala-rabbitmq')
@@ -215,5 +226,5 @@ else:
 CELERY_BROKER_URL = f'{MQ_PROTOCOL}://{RABBITMQ_USER}:{RABBITMQ_PASSWORD}@{RABBITMQ_HOST}:{RABBITMQ_PORT}//'
 
 
-CELERY_RESULT_BACKEND = f'redis://{REDIS_HOST}:{REDIS_PORT}/0'
+CELERY_RESULT_BACKEND = f'{REDIS_PROTOCOL}://{REDIS_HOST}:{REDIS_PORT}/0'
 CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
