@@ -204,9 +204,16 @@ RABBITMQ_PORT = os.environ.get('RABBITMQ_PORT', '5672')
 RABBITMQ_USER = os.environ.get('RABBITMQ_DEFAULT_USER', 'koala')
 RABBITMQ_PASSWORD = os.environ.get('RABBITMQ_DEFAULT_PASS', 'p@ss1234')
 
+if ENV == 'local':
+    # port should be 5672
+    MQ_PROTOCOL = 'amqp'
+else:
+    # port should be 5671
+    MQ_PROTOCOL = 'amqps'
+    RABBITMQ_CA_CERT_PATH = os.environ.get('RABBITMQ_CA_CERT_PATH')
 
-CELERY_BROKER_URL = (
-    f'amqp://{RABBITMQ_USER}:{RABBITMQ_PASSWORD}@{RABBITMQ_HOST}:{RABBITMQ_PORT}//'
-)
+CELERY_BROKER_URL = f'{MQ_PROTOCOL}://{RABBITMQ_USER}:{RABBITMQ_PASSWORD}@{RABBITMQ_HOST}:{RABBITMQ_PORT}//'
+
+
 CELERY_RESULT_BACKEND = f'redis://{REDIS_HOST}:{REDIS_PORT}/0'
 CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
