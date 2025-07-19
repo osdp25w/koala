@@ -70,11 +70,7 @@
       "from_secret": "DOCKER_USERNAME_osdp25w"
 - "commands":
   - "kubectl set image deployment/koala koala=osdp25w/koala:${DRONE_COMMIT_SHA} --namespace=koala || exit 1"
-  - "kubectl set image deployment/koala-celery-playlog koala-celery-playlog=osdp25w/koala:${DRONE_COMMIT_SHA} --namespace=koala || exit 1"
-  - "kubectl set image deployment/koala-celery-beat koala-celery-beat=osdp25w/koala:${DRONE_COMMIT_SHA} --namespace=koala || exit 1"
   - "kubectl rollout status deployment/koala --namespace=koala || exit 1"
-  - "kubectl rollout status deployment/koala-celery-playlog --namespace=koala || exit 1"
-  - "kubectl rollout status deployment/koala-celery-beat --namespace=koala || exit 1"
   - "echo Deployment success!"
   "image": "sinlead/drone-kubectl"
   "name": "deploy to k8s"
