@@ -53,7 +53,7 @@ INSTALLED_APPS = [
 
 START_APPS = [
     'koala',
-    # 'account',
+    'account',
     # 'listening_profile',
     # 'playlist',
     # 'provider',
