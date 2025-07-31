@@ -53,77 +53,60 @@ services:
     env_file:
       - ./env/koala-local.env
     ports:
-      - "5672:5672"
-      - "15672:15672"
+      - "5672:5672"   # AMQP (Celery)
+      - "15672:15672" # Management UI
+      - "1883:1883"   # MQTT (development testing)
+      - "8883:8883"   # MQTTS (IoT devices)
     networks:
       - koala-network
     volumes:
       - rabbitmq-data:/var/lib/rabbitmq
+      - ./rabbitmq_local_settings/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - ./rabbitmq_local_settings/enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
+      - ./rabbitmq_local_settings/certs:/etc/rabbitmq/certs:ro
 
-  # koala-celery-playlog:
-  #   build: .
-  #   depends_on:
-  #     - koala-db
-  #     - koala-redis
-  #     - koala-rabbitmq
-  #   restart: on-failure
-  #   env_file:
-  #     - ./env/koala-local.env
-  #   working_dir: /usr/src/app
-  #   volumes:
-  #     - ./:/usr/src/app
-  #   networks:
-  #     - koala-network
-  #   healthcheck:
-  #     test: ["CMD", "celery", "-A", "koala", "status"]
-  #     interval: 30s
-  #     timeout: 10s
-  #     retries: 3
-  #     start_period: 30s
-  #   entrypoint: ["/usr/src/app/entrypoint-celery.sh", "playlog_q"]
+  koala-mqtt-client:
+    build: .
+    depends_on:
+      - koala
+    restart: on-failure
+    env_file:
+      - ./env/koala-local.env
+    working_dir: /usr/src/app
+    volumes:
+      - ./:/usr/src/app
+    networks:
+      - koala-network
+    entrypoint: []
+    command: ["./entrypoint-mqtt-client.sh"]
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "mqtt_client"]
+      interval: 60s
+      timeout: 15s
+      retries: 3
+      start_period: 30s
 
-  # koala-celery-token:
-  #   build: .
-  #   depends_on:
-  #     - koala-db
-  #     - koala-redis
-  #     - koala-rabbitmq
-  #   restart: on-failure
-  #   env_file:
-  #     - ./env/koala-local.env
-  #   working_dir: /usr/src/app
-  #   volumes:
-  #     - ./:/usr/src/app
-  #   networks:
-  #     - koala-network
-  #   healthcheck:
-  #     test: ["CMD", "celery", "-A", "koala", "status"]
-  #     interval: 30s
-  #     timeout: 10s
-  #     retries: 3
-  #     start_period: 30s
-  #   entrypoint: ["/usr/src/app/entrypoint-celery.sh", "refresh_spotify_access_token_q"]
-
-  # koala-celery-beat:
-  #   build: .
-  #   restart: on-failure
-  #   volumes:
-  #     - ./:/usr/src/app
-  #   env_file:
-  #     - ./env/koala-local.env
-  #   depends_on:
-  #     - koala-db
-  #     - koala-redis
-  #     - koala-rabbitmq
-  #   networks:
-  #     - koala-network
-  #   healthcheck:
-  #     test: ["CMD", "pgrep", "-f", "celery beat"]
-  #     interval: 30s
-  #     timeout: 10s
-  #     retries: 3
-  #     start_period: 30s
-  #   command: celery -A koala beat --loglevel=info
+  koala-iot-default-worker:
+    build: .
+    depends_on:
+      - koala-db
+      - koala-redis
+      - koala-rabbitmq
+    restart: on-failure
+    env_file:
+      - ./env/koala-local.env
+    working_dir: /usr/src/app
+    volumes:
+      - ./:/usr/src/app
+    networks:
+      - koala-network
+    entrypoint: ["/usr/src/app/entrypoint-celery.sh", "iot_default_q"]
+    healthcheck:
+      test: ["CMD", "celery", "-A", "koala", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
 networks:
   koala-network:

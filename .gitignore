@@ -1,6 +1,6 @@
 .DS_Store
 .cursor/
-
+rabbitmq_local_settings/certs/*.pem
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

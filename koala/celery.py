@@ -21,3 +21,6 @@ app.conf.result_backend = settings.CELERY_RESULT_BACKEND
 
 
 app.autodiscover_tasks()
+
+# 手動包含 MQTT 任務
+app.autodiscover_tasks(['koala.mqtt'])
