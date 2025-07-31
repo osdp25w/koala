@@ -13,7 +13,9 @@ app.conf.result_backend = settings.CELERY_RESULT_BACKEND
 
 
 if settings.ENV != 'local':
-    app.conf.result_backend_transport_options = {'ssl_cert_reqs': ssl.CERT_NONE}
+    app.conf.redis_ssl = True
+    app.conf.redis_ssl_cert_reqs = ssl.CERT_NONE
+
 
 app.autodiscover_tasks()
 
