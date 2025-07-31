@@ -11,11 +11,10 @@ app = Celery('koala')
 app.conf.broker_url = settings.CELERY_BROKER_URL
 app.conf.result_backend = settings.CELERY_RESULT_BACKEND
 
+# Redis SSL 配置
 if settings.ENV != 'local':
-    app.conf.broker_use_ssl = {
-        'ssl_cert_reqs': ssl.CERT_REQUIRED,
-        'ssl_ca_certs': ssl.CERT_NONE,
-    }
+    app.conf.redis_ssl = True
+    app.conf.redis_ssl_cert_reqs = ssl.CERT_NONE
 
 
 app.autodiscover_tasks()
