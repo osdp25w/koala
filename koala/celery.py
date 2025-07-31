@@ -11,11 +11,10 @@ app = Celery('koala')
 app.conf.broker_url = settings.CELERY_BROKER_URL
 app.conf.result_backend = settings.CELERY_RESULT_BACKEND
 
-
 if settings.ENV != 'local':
     app.conf.broker_use_ssl = {
         'ssl_cert_reqs': ssl.CERT_REQUIRED,
-        'ssl_ca_certs': settings.RABBITMQ_CA_CERT_PATH,
+        'ssl_ca_certs': ssl.CERT_NONE,
     }
 
 
