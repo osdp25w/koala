@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'django.contrib.postgres',
 ]
 
 START_APPS = [
@@ -66,6 +67,8 @@ THIRD_PARTY_APPS = [
     'corsheaders',
     'rest_framework',
     'django_celery_beat',
+    'psqlextra',
+    'import_export',
 ]
 
 INSTALLED_APPS += THIRD_PARTY_APPS
@@ -108,7 +111,8 @@ DEFAULT_AUTO_FIELD = 'django.db.models.AutoField'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.postgresql',
+        # 'ENGINE': 'django.db.backends.postgresql',
+        'ENGINE': 'psqlextra.backend',
         'NAME': os.environ.get('POSTGRES_DB', 'koala'),
         'USER': os.environ.get('POSTGRES_USER', 'koala'),
         'PASSWORD': os.environ.get('POSTGRES_PASSWORD', 'p@ss1234'),
@@ -215,16 +219,61 @@ RABBITMQ_PORT = os.environ.get('RABBITMQ_PORT', '5672')
 RABBITMQ_USER = os.environ.get('RABBITMQ_DEFAULT_USER', 'koala')
 RABBITMQ_PASSWORD = os.environ.get('RABBITMQ_DEFAULT_PASS', 'p@ss1234')
 
-if ENV == 'local':
-    # port should be 5672
-    MQ_PROTOCOL = 'amqp'
-else:
-    # port should be 5671
-    MQ_PROTOCOL = 'amqps'
-    RABBITMQ_CA_CERT_PATH = os.environ.get('RABBITMQ_CA_CERT_PATH')
-
-CELERY_BROKER_URL = f'{MQ_PROTOCOL}://{RABBITMQ_USER}:{RABBITMQ_PASSWORD}@{RABBITMQ_HOST}:{RABBITMQ_PORT}//'
+CELERY_BROKER_URL = (
+    f'amqp://{RABBITMQ_USER}:{RABBITMQ_PASSWORD}@{RABBITMQ_HOST}:{RABBITMQ_PORT}//'
+)
 
 
 CELERY_RESULT_BACKEND = f'{REDIS_PROTOCOL}://{REDIS_HOST}:{REDIS_PORT}/0'
 CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
+
+# paho mqtt client
+MQTT_HOST = os.environ.get('MQTT_HOST', RABBITMQ_HOST)
+MQTT_PORT = int(os.environ.get('MQTT_PORT', '1883'))
+MQTT_USERNAME = os.environ.get('MQTT_USERNAME', RABBITMQ_USER)
+MQTT_PASSWORD = os.environ.get('MQTT_PASSWORD', RABBITMQ_PASSWORD)
+
+MQTT_CONFIG = {
+    'HOST': MQTT_HOST,
+    'PORT': MQTT_PORT,
+    'USERNAME': MQTT_USERNAME,
+    'PASSWORD': MQTT_PASSWORD,
+    'KEEPALIVE': 60,
+    'CLIENT_ID_PREFIX': 'koala',
+    'CLEAN_SESSION': True,
+    'QOS_LEVEL': 1,
+    'RETAIN_MESSAGES': False,
+    'AUTO_RECONNECT': True,
+    'RECONNECT_DELAY': 5,
+    'MAX_RECONNECT_ATTEMPTS': 10,
+    'TOPICS': {
+        'USER_TELEMETRY': 'bike/+/telemetry',  # 使用者資料
+        'FLEET_STATUS': 'bike/+/fleet',  # 車輛管理資料
+        'SPORT_METRICS': 'bike/+/sport',  # 到店後運動資料
+    },
+    'AUTO_SUBSCRIBE_TOPICS': [
+        'bike/+/telemetry',
+        'bike/+/fleet',
+        'bike/+/sport',
+    ],
+}
+
+
+IOT_DEFAULT_QUEUE = 'iot_default_q'
+
+# Celery 與 MQTT 整合設定
+CELERY_MQTT_CONFIG = {
+    'ENABLED': True,
+    'TASK_QUEUE': IOT_DEFAULT_QUEUE,
+    'ROUTING_KEY': 'mqtt',
+    'MAX_RETRIES': 3,
+    'RETRY_DELAY': 60,
+    'TASK_SERIALIZER': 'json',
+    'RESULT_SERIALIZER': 'json',
+    'MESSAGE_TYPES': {
+        'telemetry': '遙測數據',
+        'fleet': '車隊管理',
+        'sport': '運動數據',
+        'unknown': '未知類型',
+    },
+}
