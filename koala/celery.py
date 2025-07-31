@@ -17,12 +17,6 @@ if settings.ENV != 'local':
         'ssl_ca_certs': ssl.CERT_NONE,
     }
 
-if settings.ENV != 'local':
-    app.conf.broker_use_ssl = {
-        'ssl_cert_reqs': ssl.CERT_REQUIRED,
-        'ssl_ca_certs': settings.RABBITMQ_CA_CERT_PATH,
-    }
-
 
 app.autodiscover_tasks()
 
