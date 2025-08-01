@@ -18,9 +18,13 @@ from django.contrib import admin
 from django.urls import include, path
 
 from koala import settings
+from koala.views import health_check, readiness_check
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    # Health check endpoints
+    path('health/', health_check, name='health_check'),
+    path('ready/', readiness_check, name='readiness_check'),
     # path('api/account/', include(('account.urls', 'account'), namespace='account')),
     # path('api/provider/', include(('provider.urls', 'provider'), namespace='provider')),
 ]
