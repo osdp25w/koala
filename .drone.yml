@@ -70,8 +70,8 @@
       "from_secret": "DOCKER_USERNAME_osdp25w"
 - "commands":
   - "kubectl set image deployment/koala koala=osdp25w/koala:${DRONE_COMMIT_SHA} --namespace=koala || exit 1"
-  - "kubectl rollout status deployment/koala --namespace=koala || exit 1"
-  - "echo Deployment success!"
+  - "echo 'Waiting for deployment to become ready...'; kubectl rollout status deployment/koala --namespace=koala --timeout=120s || (echo '❌ Deployment failed readiness check'; exit 1)"
+  - "echo '✅ Deployment koala is successfully rolled out and ready.'"
   "image": "sinlead/drone-kubectl"
   "name": "deploy to k8s"
   "settings":
