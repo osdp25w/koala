@@ -74,6 +74,15 @@ THIRD_PARTY_APPS = [
 INSTALLED_APPS += THIRD_PARTY_APPS
 
 
+SHELL_PLUS_IMPORTS = [
+    'from datetime import datetime, date, timedelta',
+    'import json',
+    'from django.urls import resolve, reverse',
+    'from account import debug_tools as kdb',
+    'from account.services import LoginEncryptionService, MemberEncryptionService',
+]
+
+
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -143,21 +152,27 @@ AUTH_PASSWORD_VALIDATORS = [
 DEFAULT_MEMBER_PASSWORD = os.environ.get('DEFAULT_MEMBER_PASSWORD', 'pass1234')
 
 REST_FRAMEWORK = {
-    'DEFAULT_AUTHENTICATION_CLASSES': (
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
-    ),
-    'EXCEPTION_HANDLER': 'utils.exceptions.custom_exception_handler',
+    'DEFAULT_AUTHENTICATION_CLASSES': ('account.jwt.JWTAuthentication',),
+    'EXCEPTION_HANDLER': 'utils.mixins.custom_exception_handler',
 }
 
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(days=1),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'SIGNING_KEY': os.getenv('JWT_SIGNING_KEY', SECRET_KEY),
 }
+
+LOGIN_SECRET_SIGNING_KEY = os.getenv('LOGIN_SECRET_SIGNING_KEY', SECRET_KEY)
+
+GENERIC_SECRET_SIGNING_KEY = os.getenv('GENERIC_SECRET_SIGNING_KEY', SECRET_KEY)
 
 # should add in dove env
 MEMBER_API_TOKEN_SECRET_KEY = os.getenv(
     'MEMBER_API_TOKEN_SECRET_KEY', 'NjlsG_iWylZuptss7l5yihbmjYTkxtww98mcXmLcluQ='
 )
+
+# django-cryptography field encryption key
+DJANGO_CRYPTOGRAPHY_KEY = os.getenv('DJANGO_CRYPTOGRAPHY_KEY', SECRET_KEY)
 
 # Internationalization
 # https://docs.djangoproject.com/en/5.2/topics/i18n/
@@ -174,7 +189,8 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
