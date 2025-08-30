@@ -1,115 +1,138 @@
+from typing import Optional, Set, Union
+
 from django.contrib.auth.models import User
+from django.contrib.contenttypes.models import ContentType
 from django.db import models
 
-# 突然想到這樣一個user可以同時有member和staff ==
+from account.mixins.model_mixins import RBACPermissionModelMixin
+from account.services import RBACModelPermissionScopeModelService
+from utils.encryption import encrypted_fields
 
 
-class PermissionModelMixin(models.Model):
-    class Meta:
-        abstract = True
+class RBACModelPermissionScope(models.Model):
+    MODEL_SERVICE_CLASS = RBACModelPermissionScopeModelService
 
-    @property
-    def all_permissions(self):
-        # TODO: cache the result
-        return self._get_all_permissions()
+    TYPE_BASE = 'base'
+    TYPE_EXTENSION = 'extension'
 
-    def has_permission(self, resource_code, action):
-        """檢查是否有特定權限
-
-        Args:
-            resource_code: 資源代碼 (str)，如 'user'
-            action: 動作 (str)，如 'create'
-        """
-        return any(
-            perm.resource.code == resource_code and perm.action == action
-            for perm in self.all_permissions
-        )
-
-    def has_resource_permission(self, resource_code):
-        """檢查是否對某資源有任何權限
-
-        Args:
-            resource_code: 資源代碼 (str)，如 'user'
-        """
-        return any(perm.resource.code == resource_code for perm in self.all_permissions)
-
-    def _get_all_permissions(self):
-        from account.helpers import PermissionHelper
-
-        return PermissionHelper.get_all_permissions(self)
-
-
-class Resource(models.Model):
-    TYPE_INTERNAL = 'internal'
-    TYPE_EXTERNAL = 'external'
     TYPE_OPTIONS = [
-        (TYPE_INTERNAL, 'Internal'),
-        (TYPE_EXTERNAL, 'External'),
+        (TYPE_BASE, 'Base'),
+        (TYPE_EXTENSION, 'Extension'),
     ]
 
-    code = models.CharField(max_length=50, unique=True)
+    code = models.CharField(max_length=100, unique=True)
+    name = models.CharField(max_length=100)
+    related_model = models.ForeignKey(ContentType, on_delete=models.CASCADE)
+    parent = models.ForeignKey(
+        'self', on_delete=models.CASCADE, null=True, blank=True, related_name='children'
+    )
+    included_fields = models.JSONField(default=list, blank=True)
+    excluded_fields = models.JSONField(default=list, blank=True)
     type = models.CharField(max_length=50, choices=TYPE_OPTIONS)
-    name = models.CharField(max_length=50)
-    description = models.TextField(blank=True)
+    group = models.CharField(max_length=50, blank=True)
+    details = models.JSONField(default=dict, blank=True)
+    is_active = models.BooleanField(default=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['code']),
+            models.Index(fields=['related_model', 'name']),
+            models.Index(fields=['parent']),
+            models.Index(fields=['type']),
+            models.Index(fields=['group']),
+            models.Index(fields=['is_active']),
+        ]
+        ordering = ['related_model', 'type', 'name']
+
+    @property
+    def inheritance_depth(self) -> int:
+        """獲取繼承深度"""
+        return self.MODEL_SERVICE_CLASS.get_inheritance_depth(self)
+
+    def clean(self):
+        super().clean()
+        self.MODEL_SERVICE_CLASS.validate_scope(self)
+
+    def get_ancestors(self):
+        return self.MODEL_SERVICE_CLASS.get_ancestors(self)
+
+    def get_inheritance_chain(self):
+        return self.MODEL_SERVICE_CLASS.get_inheritance_chain(self)
+
+    def get_effective_fields(self) -> Set[str]:
+        """計算有效欄位：繼承父欄位 + 自己的欄位 - 排除欄位"""
+        return self.MODEL_SERVICE_CLASS.get_effective_fields(self)
+
+    def trace_field_source(self, field_name: str) -> str:
+        """追蹤欄位來源"""
+        return self.MODEL_SERVICE_CLASS.trace_field_source(self, field_name)
+
+    def get_children_recursive(self):
+        """獲取所有子孫 scope"""
+        return self.MODEL_SERVICE_CLASS.get_children_recursive(self)
 
     def __str__(self):
-        return self.code
+        if self.parent:
+            return f"{self.code} (extends {self.parent.code})"
+        return f"{self.code}"
 
 
-class Permission(models.Model):
+class RBACPermission(models.Model):
     ACTION_CREATE = 'create'
-    ACTION_READ = 'read'
+    ACTION_GET = 'get'
     ACTION_UPDATE = 'update'
     ACTION_DELETE = 'delete'
     ACTION_EXPORT = 'export'
 
     ACTION_OPTIONS = [
         (ACTION_CREATE, 'Create'),
-        (ACTION_READ, 'Read'),
+        (ACTION_GET, 'Get'),
         (ACTION_UPDATE, 'Update'),
         (ACTION_DELETE, 'Delete'),
         (ACTION_EXPORT, 'Export'),
     ]
 
-    resource = models.ForeignKey(
-        Resource, on_delete=models.CASCADE, related_name='permissions'
+    ROW_ACCESS_ALL = 'all'
+    ROW_ACCESS_PROFILE_HIERARCHY = 'profile_hierarchy'
+    ROW_ACCESS_OWN = 'own'
+
+    ROW_ACCESS_OPTIONS = [
+        (ROW_ACCESS_ALL, 'All'),
+        (ROW_ACCESS_PROFILE_HIERARCHY, 'Profile Hierarchy'),
+        (ROW_ACCESS_OWN, 'Own'),
+    ]
+
+    scope = models.ForeignKey(
+        RBACModelPermissionScope,
+        on_delete=models.CASCADE,
+        related_name='rbac_permissions',
     )
     action = models.CharField(max_length=50, choices=ACTION_OPTIONS, db_index=True)
+    row_access = models.CharField(
+        max_length=50, choices=ROW_ACCESS_OPTIONS, default=ROW_ACCESS_ALL, db_index=True
+    )
     description = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ['created_at']
-        unique_together = ['resource', 'action']
+        unique_together = ['scope', 'action', 'row_access']
         indexes = [
-            models.Index(fields=['resource', 'action']),
+            models.Index(fields=['scope', 'action']),
+            models.Index(fields=['row_access']),
         ]
 
     def __str__(self):
-        return f"{self.resource.code} {self.action}"
+        return f"{self.scope.code}:{self.action}({self.row_access})"
 
 
-class PermissionSet(models.Model):
+class RBACRole(models.Model):
     name = models.CharField(max_length=100, unique=True)
-    description = models.TextField(blank=True)
+    is_staff_only = models.BooleanField(default=True)
     permissions = models.ManyToManyField(
-        Permission, related_name='permission_sets', blank=True
+        RBACPermission, related_name='rbac_roles', blank=True
     )
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        ordering = ['created_at']
-
-    def __str__(self):
-        return f"{self.name}"
-
-
-class Role(models.Model):
-    name = models.CharField(max_length=100, unique=True)
-    is_staff_only = models.BooleanField(default=False)
-    permission_sets = models.ManyToManyField(PermissionSet, blank=True)
     description = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -118,69 +141,115 @@ class Role(models.Model):
         ordering = ['created_at']
 
     def __str__(self):
-        return f"{self.name} (is_staff_only: {self.is_staff_only})"
+        return f"{self.name} (staff_only: {self.is_staff_only})"
 
 
-class MemberRoleManager(models.Manager):
+class MemberRBACRoleManager(models.Manager):
     def get_queryset(self):
         return super().get_queryset().filter(is_staff_only=False)
 
 
-class StaffRoleManager(models.Manager):
+class StaffRBACRoleManager(models.Manager):
     def get_queryset(self):
         return super().get_queryset().filter(is_staff_only=True)
 
 
-class MemberRole(Role):
-    objects = MemberRoleManager()
+class MemberRBACRole(RBACRole):
+    objects = MemberRBACRoleManager()
 
     class Meta:
         proxy = True
 
 
-class StaffRole(Role):
-    objects = StaffRoleManager()
+class StaffRBACRole(RBACRole):
+    objects = StaffRBACRoleManager()
 
     class Meta:
         proxy = True
 
 
-class Member(PermissionModelMixin, models.Model):
-    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='member')
-    roles = models.ManyToManyField(Role, related_name='members', blank=True)
-    direct_permissions = models.ManyToManyField(
-        Permission, related_name='members', blank=True
-    )
-
+class UserProfile(RBACPermissionModelMixin, models.Model):
+    username = models.CharField(max_length=100, unique=True)
+    email = models.EmailField(max_length=254, blank=True)
     is_active = models.BooleanField(default=True, db_index=True)
-
-    # add Member's unique column
-
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
+        abstract = True
         ordering = ['created_at']
 
     def __str__(self):
-        return f"{self.user.username}"
+        return f"{self.username}: {self.email}"
 
 
-class Staff(PermissionModelMixin, models.Model):
-    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='staff')
-    roles = models.ManyToManyField(Role, related_name='staffs', blank=True)
-    direct_permissions = models.ManyToManyField(
-        Permission, related_name='staffs', blank=True
+@encrypted_fields('national_id')
+class Member(UserProfile):
+    TYPE_TOURIST = 'tourist'
+    TYPE_REAL = 'real'
+    TYPE_OPTIONS = [
+        (TYPE_TOURIST, 'Tourist'),
+        (TYPE_REAL, 'Real'),
+    ]
+
+    TYPE_HIERARCHY = {
+        TYPE_TOURIST: 1,
+        TYPE_REAL: 2,
+    }
+
+    user = models.OneToOneField(
+        User, on_delete=models.CASCADE, related_name='member_profile'
     )
-    is_active = models.BooleanField(default=True, db_index=True)
+    rbac_roles = models.ManyToManyField(
+        RBACRole, related_name='member_profiles', blank=True
+    )
+    type = models.CharField(max_length=50, choices=TYPE_OPTIONS, default=TYPE_TOURIST)
+    full_name = models.CharField(max_length=100, blank=True)
+    phone = models.TextField(blank=True)
+    _national_id = models.TextField(blank=True, db_column='national_id')
 
+    def clean(self):
+        super().clean()
+        # 檢查 Member 不能分配到 staff_only 的角色
+        if self.pk:  # 只在更新時檢查，避免創建時的問題
+            staff_only_roles = self.rbac_roles.filter(is_staff_only=True)
+            if staff_only_roles.exists():
+                from django.core.exceptions import ValidationError
+
+                role_names = ', '.join(staff_only_roles.values_list('name', flat=True))
+                raise ValidationError(f'Member 不能分配到僅限員工的角色: {role_names}')
+
+
+class Staff(UserProfile):
+    TYPE_STAFF = 'staff'
+    TYPE_ADMIN = 'admin'
+    TYPE_OPTIONS = [
+        (TYPE_STAFF, 'Staff'),
+        (TYPE_ADMIN, 'Admin'),
+    ]
+
+    TYPE_HIERARCHY = {
+        TYPE_STAFF: 1,
+        TYPE_ADMIN: 2,
+    }
+
+    user = models.OneToOneField(
+        User, on_delete=models.CASCADE, related_name='staff_profile'
+    )
+    rbac_roles = models.ManyToManyField(
+        RBACRole, related_name='staff_profiles', blank=True
+    )
+    type = models.CharField(max_length=50, choices=TYPE_OPTIONS, default=TYPE_STAFF)
     # add Staff's unique column
 
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
 
-    class Meta:
-        ordering = ['created_at']
+# Add User profile navigation property
+def get_user_profile(self) -> Optional[Union['Member', 'Staff']]:
+    if hasattr(self, 'member_profile'):
+        return self.member_profile
+    elif hasattr(self, 'staff_profile'):
+        return self.staff_profile
+    return None
 
-    def __str__(self):
-        return f"{self.user.username}"
+
+User.add_to_class('profile', property(get_user_profile))

@@ -1,218 +1,200 @@
 import logging
-from enum import member
-from typing import List, Optional, Set
+from collections import defaultdict
+from typing import Dict, Set
 
-from django.conf import settings
-from django.contrib.auth.models import User
+from django.contrib.contenttypes.models import ContentType
 from django.core.cache import cache
+
+from account.models import RBACPermission, UserProfile
+from account.utils import RBACPermissionBitMapService
+from utils.constants import RowAccessLevel
 
 logger = logging.getLogger(__name__)
 
 
-class PermissionSetCache:
-    """權限集合快取"""
-
-    CACHE_TIMEOUT = 60 * 60 * 24  # 24小時
-    CACHE_KEY = 'permission_set:{permission_set_id}'
+class PermissionCache:
+    CACHE_TIMEOUT = 60 * 60 * 24  # 1 day
+    CACHE_KEY_PATTERN = 'perms:{profile_type}:{profile_id}:{model_name}'
 
     @classmethod
-    def _compose_cache_key(cls, permission_set_id: int) -> str:
-        return cls.CACHE_KEY.format(permission_set_id=permission_set_id)
-
-    @classmethod
-    def get_permission_ids(
-        cls, permission_set_id: int, force_refresh: bool = False
-    ) -> Set[int]:
-        """獲取權限集合的權限 ID"""
-        if not force_refresh:
-            cache_key = cls._compose_cache_key(permission_set_id)
-            cached_ids = cache.get(cache_key)
-            if cached_ids is not None:
-                return set(cached_ids)
-
-        # 從資料庫獲取
-        permission_ids = cls._fetch_permission_ids_from_db(permission_set_id)
-        cache_key = cls._compose_cache_key(permission_set_id)
-        cache.set(cache_key, list(permission_ids), cls.CACHE_TIMEOUT)
-
-        return permission_ids
-
-    @classmethod
-    def clear(cls, permission_set_id: int):
-        """清除權限集合快取"""
-        cache_key = cls._compose_cache_key(permission_set_id)
-        cache.delete(cache_key)
-
-    @classmethod
-    def _fetch_permission_ids_from_db(cls, permission_set_id: int) -> Set[int]:
-        """從資料庫獲取權限集合的權限 ID"""
-        try:
-            from account.models import PermissionSet
-
-            permission_set = PermissionSet.objects.get(id=permission_set_id)
-            return set(permission_set.permissions.values_list('id', flat=True))
-        except PermissionSet.DoesNotExist:
-            return set()
-
-
-class UserRoleCache:
-    CACHE_TIMEOUT = 60 * 60 * 24  # 24小時
-    CACHE_KEY = 'user:{user_id}'
-
-
-class RolePermissionCache:
-    CACHE_TIMEOUT = 60 * 60 * 24  # 24小時
-    CACHE_KEY = 'role:{role_id}'
-
-    @classmethod
-    def _compose_cache_key(cls, role_id: int) -> str:
-        return cls.CACHE_KEY.format(role_id=role_id)
-
-    @classmethod
-    def get_role_permission_ids(
-        cls, role_id: int, force_refresh: bool = False
-    ) -> Set[int]:
-        if not force_refresh:
-            cache_key = cls._compose_cache_key(role_id)
-            cached_ids = cache.get(cache_key)
-            if cached_ids is not None:
-                return set(cached_ids)
-
-        permission_ids = cls._fetch_role_permissions(role_id)
-        cache_key = cls._compose_cache_key(role_id)
-        cache.set(cache_key, list(permission_ids), cls.CACHE_TIMEOUT)
-
-        return permission_ids
-
-    @classmethod
-    def get_member_roles(cls, force_refresh: bool = False) -> List[int]:
-        """獲取 Member 可用角色 ID (is_staff_only=False)"""
-        if not force_refresh:
-            cached_ids = cache.get(cls.MEMBER_ROLES_KEY)
-            if cached_ids is not None:
-                return cached_ids
-
-        # 從資料庫獲取
-        from account.models import Role
-
-        role_ids = list(
-            Role.objects.filter(is_staff_only=False).values_list('id', flat=True)
+    def _compose_cache_key(cls, profile: UserProfile, model_name: str) -> str:
+        """獲取快取 key"""
+        return cls.CACHE_KEY_PATTERN.format(
+            profile_type=profile._meta.model_name,
+            profile_id=profile.id,
+            model_name=model_name,
         )
-        cache.set(cls.MEMBER_ROLES_KEY, role_ids, cls.CACHE_TIMEOUT)
-
-        return role_ids
 
     @classmethod
-    def get_all_roles(cls, force_refresh: bool = False) -> List[int]:
-        """獲取所有角色 ID (Staff 可用)"""
-        if not force_refresh:
-            cached_ids = cache.get(cls.ALL_ROLES_KEY)
-            if cached_ids is not None:
-                return cached_ids
+    def get_model_permission_bitmasks(
+        cls, profile: UserProfile, model_class
+    ) -> Dict[str, int]:
+        """獲取用戶對特定模型的權限 Bitmask
+        返回格式: {'get': bitmask_int, 'create': bitmask_int, ...}
+        """
+        model_name = model_class._meta.model_name
+        cache_key = cls._compose_cache_key(profile, model_name)
+        model_perms = cache.get(cache_key)
 
-        # 從資料庫獲取
-        from account.models import Role
-
-        role_ids = list(Role.objects.values_list('id', flat=True))
-        cache.set(cls.ALL_ROLES_KEY, role_ids, cls.CACHE_TIMEOUT)
-
-        return role_ids
-
-    @classmethod
-    def clear(cls, role_id: int):
-        """清除角色快取"""
-        cache_key = cls._compose_cache_key(role_id)
-        cache.delete(cache_key)
-
-    @classmethod
-    def clear_role_lists(cls):
-        """清除角色列表快取"""
-        cache.delete_many([cls.MEMBER_ROLES_KEY, cls.ALL_ROLES_KEY])
-
-    @classmethod
-    def _fetch_role_permissions(cls, role_id: int) -> Set[int]:
-        """計算角色的所有權限"""
-        try:
-            from account.models import Role
-
-            role = Role.objects.get(id=role_id)
-
-            all_permissions = set()
-            permission_set_ids = role.permission_sets.values_list('id', flat=True)
-
-            for permission_set_id in permission_set_ids:
-                permission_ids = PermissionSetCache.get_permission_ids(
-                    permission_set_id
-                )
-                all_permissions.update(permission_ids)
-
-            return all_permissions
-        except Role.DoesNotExist:
-            return set()
-
-
-class UserPermissionCache:
-    CACHE_TIMEOUT = 60 * 60 * 24  # 24小時
-    CACHE_KEY = 'user_permissions:{user_id}'
-
-    @classmethod
-    def _compose_cache_key(cls, user_id: int) -> str:
-        return cls.CACHE_KEY.format(user_id=user_id)
-
-    @classmethod
-    def set_permission_ids(cls, user_id: int, permission_ids: Set[int]):
-        cache_key = cls._compose_cache_key(user_id=user_id)
-        cache.set(cache_key, list(permission_ids), cls.CACHE_TIMEOUT)
-
-    @classmethod
-    def get_user_permission_ids(
-        cls, user_id: int, force_refresh: bool = False
-    ) -> Set[int]:
-        cache_key = cls._compose_cache_key(user_id=user_id)
-
-        if not force_refresh:
-            cached_ids = cache.get(cache_key)
-            if cached_ids is not None:
-                return set(cached_ids)
-
-        permission_ids = cls._fetch_user_permissions(user_id)
-        cache.set(cache_key, list(permission_ids), cls.CACHE_TIMEOUT)
-
-        return permission_ids
-
-    @classmethod
-    def clear_user_permissions(cls, user_id: int):
-        cache_key = cls._compose_cache_key(user_id=user_id)
-        cache.delete(cache_key)
-
-    @classmethod
-    def _fetch_user_permissions(cls, user_id: int) -> Set[int]:
-        user = User.objects.filter(id=user_id).first()
-        if user is None:
-            logger.warning(f"User {user_id} not found")
-            return set()
-
-        user_profile = None
-        if hasattr(user, 'staff'):
-            user_profile = user.staff
-        elif hasattr(user, 'member'):
-            user_profile = user.member
-        else:
-            logger.warning(f"User {user_id} has no staff or member profile")
-            return set()
-
-        # direct permissions
-        all_permissions = set()
-        if user_profile:
-            direct_permission_ids = set(
-                user_profile.direct_permissions.values_list('id', flat=True)
+        if model_perms is None:
+            model_perms = cls._build_model_permission_bitmasks(profile, model_class)
+            cache.set(cache_key, model_perms, cls.CACHE_TIMEOUT)
+            logger.info(
+                f"Cached {model_name} permissions for {profile._meta.model_name} {profile.username}"
             )
-            all_permissions.update(direct_permission_ids)
 
-        # role permissions
-        role_ids = user_profile.roles.values_list('id', flat=True)
-        for role_id in role_ids:
-            role_permission_ids = RoleCache.get_role_permission_ids(role_id)
-            all_permissions.update(role_permission_ids)
+        return model_perms
 
-        return all_permissions
+    @classmethod
+    def _build_model_permission_bitmasks(
+        cls, profile: UserProfile, model_class
+    ) -> Dict[str, int]:
+        """構建用戶對特定模型的權限 Bitmask（四進制壓縮）"""
+        content_type = ContentType.objects.get_for_model(model_class)
+
+        # 查詢該用戶對此模型的所有權限
+        permissions = (
+            RBACPermission.objects.filter(
+                rbac_roles__in=profile.rbac_roles.all(),
+                scope__related_model=content_type,
+                scope__is_active=True,
+            )
+            .select_related('scope')
+            .distinct()
+        )
+
+        # 按 action 分組收集欄位和對應的row_access
+        action_field_access = defaultdict(lambda: defaultdict(int))
+        for perm in permissions:
+            # 計算有效欄位
+            effective_fields = perm.scope.get_effective_fields()
+
+            # 將row_access轉換為數值
+            access_level = cls._get_access_level(perm.row_access)
+
+            for field in effective_fields:
+                # 取最高權限（如果同個欄位有多個Permission）
+                action_field_access[perm.action][field] = max(
+                    action_field_access[perm.action][field], access_level
+                )
+
+        # 將欄位權限壓縮為四進制bitmask
+        compressed_perms = {}
+        for action, field_access in action_field_access.items():
+            bitmask = RBACPermissionBitMapService.encode_field_permissions_to_bitmask(
+                model_class, field_access
+            )
+            compressed_perms[action] = bitmask
+
+        return compressed_perms
+
+    @classmethod
+    def _get_access_level(cls, row_access: str) -> int:
+        """將row_access字串轉換為數值"""
+        return RowAccessLevel.from_string(row_access)
+
+    @classmethod
+    def get_allowed_fields(
+        cls, profile: UserProfile, model_class, action: str
+    ) -> Set[str]:
+        """直接從緩存獲取允許的欄位，不打 DB"""
+        model_perms = cls.get_model_permission_bitmasks(profile, model_class)
+        bitmask = model_perms.get(action, 0)
+
+        return RBACPermissionBitMapService.get_allowed_fields_from_bitmask(
+            model_class, bitmask
+        )
+
+    @classmethod
+    def get_allowed_fields_with_access(
+        cls, profile: UserProfile, model_class, action: str
+    ) -> Dict[str, int]:
+        """獲取允許的欄位及其存取權限級別
+        Returns: {'field_name': access_level, ...}
+        """
+        model_perms = cls.get_model_permission_bitmasks(profile, model_class)
+        bitmask = model_perms.get(action, 0)
+
+        return RBACPermissionBitMapService.get_allowed_fields_with_access_from_bitmask(
+            model_class, bitmask
+        )
+
+    @classmethod
+    def get_field_access_level(
+        cls, profile: UserProfile, model_class, action: str, field_name: str
+    ) -> int:
+        """獲取特定欄位的存取權限級別 (0=none, 1=own, 2=profile_hierarchy, 3=all)"""
+        model_perms = cls.get_model_permission_bitmasks(profile, model_class)
+        bitmask = model_perms.get(action, 0)
+
+        if bitmask == 0:
+            return 0
+
+        bit_map = RBACPermissionBitMapService.get_field_bit_map(model_class)
+        if field_name not in bit_map:
+            return 0
+
+        bit_pos = bit_map[field_name]
+        return RBACPermissionBitMapService.get_field_access_level_from_bitmask(
+            bitmask, bit_pos
+        )
+
+    @classmethod
+    def has_model_permission(
+        cls, profile: UserProfile, model_class, action: str
+    ) -> bool:
+        """直接從緩存檢查權限，不打 DB"""
+        model_perms = cls.get_model_permission_bitmasks(profile, model_class)
+        return model_perms.get(action, 0) > 0
+
+    @classmethod
+    def clear_profile_cache(cls, profile: UserProfile) -> None:
+        """清除用戶的所有權限緩存"""
+        profile_type = profile._meta.model_name
+        pattern = f"perms:{profile_type}:{profile.id}:*"
+
+        try:
+            cache.delete_pattern(pattern)
+            logger.info(
+                f"Cleared all permission cache for {profile_type} {profile.username}"
+            )
+        except AttributeError:
+            logger.warning(
+                f"Cache backend doesn't support pattern deletion for {pattern}"
+            )
+
+    @classmethod
+    def clear_model_cache(cls, model_class) -> None:
+        """清除特定模型的所有權限緩存"""
+        model_name = model_class._meta.model_name
+        pattern = f"perms:*:*:{model_name}"
+
+        try:
+            cache.delete_pattern(pattern)
+            logger.info(f"Cleared all permission cache for model {model_name}")
+        except AttributeError:
+            logger.warning(
+                f"Cache backend doesn't support pattern deletion for {pattern}"
+            )
+
+    @classmethod
+    def clear_profile_model_cache(cls, profile: UserProfile, model_class) -> None:
+        """清除特定用戶對特定模型的權限緩存"""
+        model_name = model_class._meta.model_name
+        cache_key = cls._compose_cache_key(profile, model_name)
+
+        cache.delete(cache_key)
+        logger.info(
+            f"Cleared {model_name} permission cache for {profile._meta.model_name} {profile.username}"
+        )
+
+    @classmethod
+    def clear_all_cache(cls) -> None:
+        """清除所有權限緩存"""
+        try:
+            cache.delete_pattern('perms:*')
+            logger.info('Cleared all permission cache')
+        except AttributeError:
+            logger.warning(
+                "Cache backend doesn't support pattern deletion. Consider manual cleanup."
+            )

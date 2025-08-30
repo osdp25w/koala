@@ -12,11 +12,11 @@ class APISuccessResponse(Response):
         data: dict = None,
         msg: str = ResponseMessage.SUCCESS,
         status_code: int = status.HTTP_200_OK,
-        headers: dict = None,
+        **kwargs,
     ):
-        payload = {'code': code, 'data': data or {}, 'msg': msg}
+        payload = {'code': code, 'msg': msg, 'data': data or {}}
 
-        super().__init__(data=payload, status=status_code, headers=headers)
+        super().__init__(data=payload, status=status_code)
 
 
 class APIFailedResponse(Response):
@@ -26,8 +26,8 @@ class APIFailedResponse(Response):
         code: int,
         msg: str,
         details: dict = None,
-        status_code: int = status.HTTP_400_BAD_REQUEST,
+        status_code: int = status.HTTP_200_OK,
         **kwargs,
     ):
-        payload = {'code': code, 'data': {}, 'msg': msg, 'details': details}
+        payload = {'code': code, 'msg': msg, 'details': details}
         super().__init__(data=payload, status=status_code)

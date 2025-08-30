@@ -1,0 +1,155 @@
+[
+  {
+    "model": "account.rbacmodelpermissionscope",
+    "pk": 1,
+    "fields": {
+      "code": "member_basic",
+      "name": "Member Basic",
+      "related_model": ["account", "member"],
+      "parent": null,
+      "included_fields": ["id", "username", "email", "full_name", "type", "is_active", "created_at", "updated_at"],
+      "excluded_fields": [],
+      "type": "base",
+      "group": "",
+      "details": {},
+      "is_active": true,
+      "created_at": "2025-01-01T00:00:00Z",
+      "updated_at": "2025-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "account.rbacmodelpermissionscope",
+    "pk": 2,
+    "fields": {
+      "code": "member_all",
+      "name": "Member All",
+      "related_model": ["account", "member"],
+      "parent": 1,
+      "included_fields": ["phone", "national_id"],
+      "excluded_fields": [],
+      "type": "extension",
+      "group": "",
+      "details": {},
+      "is_active": true,
+      "created_at": "2025-01-01T00:00:00Z",
+      "updated_at": "2025-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "account.rbacmodelpermissionscope",
+    "pk": 3,
+    "fields": {
+      "code": "staff_basic",
+      "name": "Staff Basic Fields",
+      "related_model": ["account", "staff"],
+      "parent": null,
+      "included_fields": ["id", "username", "email", "type", "is_active", "created_at"],
+      "excluded_fields": [],
+      "type": "base",
+      "group": "",
+      "details": {},
+      "is_active": true,
+      "created_at": "2025-01-01T00:00:00Z",
+      "updated_at": "2025-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "account.rbacpermission",
+    "pk": 1,
+    "fields": {
+      "scope": 1,
+      "action": "get",
+      "row_access": "profile_hierarchy",
+      "description": "Tourist/Real 查看同級或低級會員基本資訊",
+      "created_at": "2025-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "account.rbacpermission",
+    "pk": 2,
+    "fields": {
+      "scope": 2,
+      "action": "get",
+      "row_access": "own",
+      "description": "Tourist/Real 查看自己完整資訊",
+      "created_at": "2025-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "account.rbacpermission",
+    "pk": 3,
+    "fields": {
+      "scope": 2,
+      "action": "update",
+      "row_access": "own",
+      "description": "Tourist/Real 更新自己完整資訊",
+      "created_at": "2025-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "account.rbacpermission",
+    "pk": 4,
+    "fields": {
+      "scope": 2,
+      "action": "get",
+      "row_access": "all",
+      "description": "Staff/Admin 查看所有會員完整資訊",
+      "created_at": "2025-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "account.rbacpermission",
+    "pk": 5,
+    "fields": {
+      "scope": 3,
+      "action": "get",
+      "row_access": "profile_hierarchy",
+      "description": "View staff fields with hierarchy",
+      "created_at": "2025-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "account.rbacpermission",
+    "pk": 6,
+    "fields": {
+      "scope": 3,
+      "action": "get",
+      "row_access": "all",
+      "description": "Admin view all staff fields",
+      "created_at": "2025-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "account.rbacpermission",
+    "pk": 7,
+    "fields": {
+      "scope": 3,
+      "action": "update",
+      "row_access": "own",
+      "description": "Update own staff record",
+      "created_at": "2025-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "account.rbacpermission",
+    "pk": 8,
+    "fields": {
+      "scope": 3,
+      "action": "update",
+      "row_access": "profile_hierarchy",
+      "description": "Admin update staff with hierarchy",
+      "created_at": "2025-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "account.rbacpermission",
+    "pk": 9,
+    "fields": {
+      "scope": 3,
+      "action": "delete",
+      "row_access": "own",
+      "description": "Delete own staff record",
+      "created_at": "2025-01-01T00:00:00Z"
+    }
+  }
+]
