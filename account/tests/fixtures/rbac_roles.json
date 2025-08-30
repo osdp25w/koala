@@ -1,0 +1,35 @@
+[
+  {
+    "model": "account.rbacrole",
+    "pk": 1,
+    "fields": {
+      "name": "Basic Member Role",
+      "is_staff_only": false,
+      "description": "Basic permissions for member users",
+      "created_at": "2025-01-01T00:00:00Z",
+      "updated_at": "2025-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "account.rbacrole",
+    "pk": 2,
+    "fields": {
+      "name": "Staff Role",
+      "is_staff_only": true,
+      "description": "Basic permissions for staff users",
+      "created_at": "2025-01-01T00:00:00Z",
+      "updated_at": "2025-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "account.rbacrole",
+    "pk": 3,
+    "fields": {
+      "name": "Admin Role",
+      "is_staff_only": true,
+      "description": "Administrative permissions for admin users",
+      "created_at": "2025-01-01T00:00:00Z",
+      "updated_at": "2025-01-01T00:00:00Z"
+    }
+  }
+]
