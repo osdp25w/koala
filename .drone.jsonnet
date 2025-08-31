@@ -45,7 +45,9 @@ local migration_chack_pipeline = {
       name:  "migration-dry-run",
       image: "python:3.10.13-slim",
       environment:{
-        DJANGO_SECRET_KEY: "MIGRATION_CHECK_PIPELINE_SUPER_SECRET"
+        DJANGO_SECRET_KEY: "MIGRATION_CHECK_PIPELINE_SUPER_SECRET",
+        GENERIC_SECRET_SIGNING_KEY: "l-HUGJOVf2tXV6zajZCKNgo43DKNIbq2cRbjTnwcuTs=",
+        LOGIN_SECRET_SIGNING_KEY: "l-HUGJOVf2tXV6zajZCKNgo43DKNIbq2cRbjTnwcuTs=",
       },
       commands: [
         "pip install -r requirements.txt || exit 1",
@@ -90,6 +92,8 @@ local test_pipeline = {
       environment: {
         ENV: "local",
         DJANGO_SECRET_KEY: "TEST_PIPELINE_SUPER_SECRET",
+        GENERIC_SECRET_SIGNING_KEY: "l-HUGJOVf2tXV6zajZCKNgo43DKNIbq2cRbjTnwcuTs=",
+        LOGIN_SECRET_SIGNING_KEY: "l-HUGJOVf2tXV6zajZCKNgo43DKNIbq2cRbjTnwcuTs=",
         POSTGRES_HOST: "koala-test-db",
         POSTGRES_USER: "koala-test",
         POSTGRES_PASSWORD: "koala-test",

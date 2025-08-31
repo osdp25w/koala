@@ -9,6 +9,8 @@
   - "python manage.py makemigrations --dry-run --check"
   "environment":
     "DJANGO_SECRET_KEY": "MIGRATION_CHECK_PIPELINE_SUPER_SECRET"
+    "GENERIC_SECRET_SIGNING_KEY": "l-HUGJOVf2tXV6zajZCKNgo43DKNIbq2cRbjTnwcuTs="
+    "LOGIN_SECRET_SIGNING_KEY": "l-HUGJOVf2tXV6zajZCKNgo43DKNIbq2cRbjTnwcuTs="
   "image": "python:3.10.13-slim"
   "name": "migration-dry-run"
 "trigger":
@@ -64,6 +66,8 @@
   "environment":
     "DJANGO_SECRET_KEY": "TEST_PIPELINE_SUPER_SECRET"
     "ENV": "local"
+    "GENERIC_SECRET_SIGNING_KEY": "l-HUGJOVf2tXV6zajZCKNgo43DKNIbq2cRbjTnwcuTs="
+    "LOGIN_SECRET_SIGNING_KEY": "l-HUGJOVf2tXV6zajZCKNgo43DKNIbq2cRbjTnwcuTs="
     "POSTGRES_DB": "koala-test"
     "POSTGRES_HOST": "koala-test-db"
     "POSTGRES_PASSWORD": "koala-test"
