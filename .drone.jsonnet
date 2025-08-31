@@ -85,37 +85,7 @@ local test_pipeline = {
   ],
   steps: [
     {
-      name: "wait-for-postgres",
-      image: "postgres:14-alpine",
-      environment: {
-        PGPASSWORD: "koala-test",
-      },
-      commands: [
-        "echo 'Waiting for PostgreSQL to be ready...'",
-        "until pg_isready -h koala-test-db -p 5432 -U koala-test; do echo 'PostgreSQL not ready, waiting...'; sleep 2; done",
-        "echo '✅ PostgreSQL is ready!'",
-      ],
-    },
-    {
-      name: "wait-for-redis",
-      image: "redis:7.4.2",
-      commands: [
-        "echo 'Waiting for Redis to be ready...'",
-        "until redis-cli -h koala-test-redis -p 6379 ping | grep -q PONG; do echo 'Redis not ready, waiting...'; sleep 2; done",
-        "echo '✅ Redis is ready!'",
-      ],
-    },
-    {
-      name: "install-dependencies",
-      image: "python:3.10.13-slim",
-      commands: [
-        "echo 'Installing Python dependencies...'",
-        "pip install -r requirements.txt || exit 1",
-        "echo '✅ Dependencies installed successfully!'",
-      ],
-    },
-    {
-      name: "run-tests",
+      name: "test",
       image: "python:3.10.13-slim",
       environment: {
         ENV: "test",
@@ -129,13 +99,24 @@ local test_pipeline = {
         REDIS_PORT: "6379",
       },
       commands: [
+        "echo '🔧 Installing system dependencies...'",
+        "apt-get update && apt-get install -y postgresql-client redis-tools",
+        "echo '📦 Installing Python dependencies...'",
         "pip install -r requirements.txt",
-        "echo 'Running Django system check...'",
+        "echo '⏳ Waiting for services to be ready...'",
+        "until pg_isready -h koala-test-db -p 5432 -U koala-test; do echo 'PostgreSQL not ready, waiting...'; sleep 2; done",
+        "until redis-cli -h koala-test-redis -p 6379 ping | grep -q PONG; do echo 'Redis not ready, waiting...'; sleep 2; done",
+        "echo '✅ All services are ready!'",
+        "echo '🔍 Debugging information:'",
+        "env | grep -E '(POSTGRES|REDIS|DJANGO)' | sort",
+        "echo '🔌 Testing database connection...'",
+        "python -c \"import os; import psycopg2; conn = psycopg2.connect(host=os.getenv('POSTGRES_HOST'), database=os.getenv('POSTGRES_DB'), user=os.getenv('POSTGRES_USER'), password=os.getenv('POSTGRES_PASSWORD'), port=os.getenv('POSTGRES_PORT')); print('✅ Database connection successful'); conn.close()\"",
+        "echo '🔍 Running Django system check...'",
         "python manage.py check || exit 1",
         "echo '✅ Django system check passed!'",
-        "echo 'Running tests...'",
-        "python manage.py test || exit 1",
-        "echo '✅ All tests passed!'",
+        "echo '🧪 Running tests...'",
+        "python manage.py test --verbosity=2 || exit 1",
+        "echo '🎉 All tests passed!'",
       ],
     },
   ],
