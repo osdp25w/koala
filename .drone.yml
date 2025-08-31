@@ -8,9 +8,12 @@
   - "python manage.py check || exit 1"
   - "python manage.py makemigrations --dry-run --check"
   "environment":
+    "DJANGO_CRYPTOGRAPHY_KEY": "aSO2KbUYVPylMMNzkzajFAGXhlsRRO34rJ62zr27Ro0="
     "DJANGO_SECRET_KEY": "MIGRATION_CHECK_PIPELINE_SUPER_SECRET"
     "GENERIC_SECRET_SIGNING_KEY": "l-HUGJOVf2tXV6zajZCKNgo43DKNIbq2cRbjTnwcuTs="
+    "JWT_SIGNING_KEY": "MIGRATION_CHECK_JWT_SECRET"
     "LOGIN_SECRET_SIGNING_KEY": "l-HUGJOVf2tXV6zajZCKNgo43DKNIbq2cRbjTnwcuTs="
+    "MEMBER_API_TOKEN_SECRET_KEY": "NjlsG_iWylZuptss7l5yihbmjYTkxtww98mcXmLcluQ="
   "image": "python:3.10.13-slim"
   "name": "migration-dry-run"
 "trigger":
@@ -64,10 +67,13 @@
   - "timeout 600 python manage.py test --noinput --verbosity=1 --parallel=1 --keepdb || exit 1"
   - "echo '🎉 Tests completed!'"
   "environment":
+    "DJANGO_CRYPTOGRAPHY_KEY": "aSO2KbUYVPylMMNzkzajFAGXhlsRRO34rJ62zr27Ro0="
     "DJANGO_SECRET_KEY": "TEST_PIPELINE_SUPER_SECRET"
     "ENV": "local"
     "GENERIC_SECRET_SIGNING_KEY": "l-HUGJOVf2tXV6zajZCKNgo43DKNIbq2cRbjTnwcuTs="
+    "JWT_SIGNING_KEY": "TEST_PIPELINE_JWT_SECRET"
     "LOGIN_SECRET_SIGNING_KEY": "l-HUGJOVf2tXV6zajZCKNgo43DKNIbq2cRbjTnwcuTs="
+    "MEMBER_API_TOKEN_SECRET_KEY": "NjlsG_iWylZuptss7l5yihbmjYTkxtww98mcXmLcluQ="
     "POSTGRES_DB": "koala-test"
     "POSTGRES_HOST": "koala-test-db"
     "POSTGRES_PASSWORD": "koala-test"
