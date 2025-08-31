@@ -14,6 +14,7 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
+from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
 
@@ -21,11 +22,11 @@ from koala import settings
 from koala.views import health_check, readiness_check
 
 urlpatterns = [
-    path('admin/', admin.site.urls),
+    path('eucalyptus/', admin.site.urls),
     # Health check endpoints
     path('health/', health_check, name='health_check'),
     path('ready/', readiness_check, name='readiness_check'),
-    # path('api/account/', include(('account.urls', 'account'), namespace='account')),
+    path('api/account/', include(('account.urls', 'account'), namespace='account')),
     # path('api/provider/', include(('provider.urls', 'provider'), namespace='provider')),
 ]
 
@@ -55,3 +56,6 @@ urlpatterns = [
 #     ]
 
 #     urlpatterns += test_urlpatterns
+
+
+urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
