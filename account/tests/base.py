@@ -54,6 +54,12 @@ class BaseTestWithFixtures(TestCase):
             user.set_password('password123')
             user.save()
 
+        # 設置加密欄位（從 fixtures 明文數據動態加密）
+        self.member1.national_id = 'A123456789'
+        self.member1.save()
+        self.member2.national_id = 'B987654321'
+        self.member2.save()
+
         # 設置 RBAC 角色關聯（多對多關係在測試邏輯中設定）
         self._setup_rbac_assignments()
 

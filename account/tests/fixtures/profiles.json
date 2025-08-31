@@ -9,7 +9,7 @@
       "type": "tourist",
       "full_name": "Test Member One",
       "phone": "+886912345678",
-      "_national_id": "gAAAAABosw10S4sEODZutvTv9hKS0JLZwH9SpoekRULsg_KOWXuop8eL9ArZNSvc6SGHXL4CVP_ufE12O-d7jreNupkzWyYtCA==",
+      "_national_id": "",  // set up in the test function
       "is_active": true,
       "created_at": "2025-01-01T00:00:00Z",
       "updated_at": "2025-01-01T00:00:00Z"
@@ -25,7 +25,7 @@
       "type": "tourist",
       "full_name": "Test Member Two",
       "phone": "+886987654321",
-      "_national_id": "gAAAAABosw10QsdddZwImjDGbliVrVVL4NoOUw6lFYo3cMoHTJFQoaxjVmC7dILZGKMaPgLSBPw4AYlHVhw8cnsSxJSq2OpCng==",
+      "_national_id": "", // set up in the test function
       "is_active": true,
       "created_at": "2025-01-01T00:00:00Z",
       "updated_at": "2025-01-01T00:00:00Z"
