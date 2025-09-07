@@ -39,12 +39,9 @@ services:
       - koala-network
     ports:
       - "8000:8000"
-    # command: >
-    #   bash -c "python manage.py migrate &&
-    #           python manage.py register_periodic_tasks &&
-    #           python manage.py runserver 0.0.0.0:8000"
     command: >
       bash -c "python manage.py migrate &&
+              python manage.py register_periodic_tasks &&
               python manage.py runserver 0.0.0.0:8000"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/')"]
@@ -106,13 +103,101 @@ services:
       - ./:/usr/src/app
     networks:
       - koala-network
-    entrypoint: ["/usr/src/app/entrypoint-celery.sh", "iot_default_q"]
+    entrypoint: ["/usr/src/app/entrypoint-celery.sh", "4", "iot_default_q"]
     healthcheck:
       test: ["CMD", "celery", "-A", "koala", "status"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 30s
+
+  koala-bike-realtime-status-worker:
+    build: .
+    depends_on:
+      - koala-db
+      - koala-redis
+      - koala-rabbitmq
+    restart: on-failure
+    env_file:
+      - ./env/koala-local.env
+    working_dir: /usr/src/app
+    volumes:
+      - ./:/usr/src/app
+    networks:
+      - koala-network
+    entrypoint: ["/usr/src/app/entrypoint-celery.sh", "4", "bike_realtime_status_q"]
+    healthcheck:
+      test: ["CMD", "celery", "-A", "koala", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  koala-bike-error-log-worker:
+    build: .
+    depends_on:
+      - koala-db
+      - koala-redis
+      - koala-rabbitmq
+    restart: on-failure
+    env_file:
+      - ./env/koala-local.env
+    working_dir: /usr/src/app
+    volumes:
+      - ./:/usr/src/app
+    networks:
+      - koala-network
+    entrypoint: ["/usr/src/app/entrypoint-celery.sh", "4", "bike_error_log_q"]
+    healthcheck:
+      test: ["CMD", "celery", "-A", "koala", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  koala-statistics-worker:
+    build: .
+    depends_on:
+      - koala-db
+      - koala-redis
+      - koala-rabbitmq
+    restart: on-failure
+    env_file:
+      - ./env/koala-local.env
+    working_dir: /usr/src/app
+    volumes:
+      - ./:/usr/src/app
+    networks:
+      - koala-network
+    entrypoint: ["/usr/src/app/entrypoint-celery.sh", "4", "statistics_q"]
+    healthcheck:
+      test: ["CMD", "celery", "-A", "koala", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  koala-celery-beat:
+    build: .
+    restart: on-failure
+    volumes:
+      - ./:/usr/src/app
+    env_file:
+      - ./env/koala-local.env
+    depends_on:
+      - koala-db
+      - koala-redis
+      - koala-rabbitmq
+    networks:
+      - koala-network
+    entrypoint: []
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "celery beat"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    command: celery -A koala beat --loglevel=info --scheduler=django_celery_beat.schedulers:DatabaseScheduler
 
 networks:
   koala-network:

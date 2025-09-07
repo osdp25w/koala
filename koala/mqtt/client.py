@@ -252,10 +252,6 @@ class MQTTClientManager:
         """從topic中提取message_type"""
         if topic.endswith('/telemetry'):
             return 'telemetry'
-        elif topic.endswith('/fleet'):
-            return 'fleet'
-        elif topic.endswith('/sport'):
-            return 'sport'
         else:
             return 'unknown'
 
@@ -297,18 +293,4 @@ def publish_bike_telemetry(bike_id: str, telemetry_data: dict) -> bool:
     """發布腳踏車遙測資料"""
     topic = f"bike/{bike_id}/telemetry"
     payload = json.dumps(telemetry_data)
-    return publish_message(topic, payload)
-
-
-def publish_bike_fleet_status(bike_id: str, fleet_data: dict) -> bool:
-    """發布車輛管理資料"""
-    topic = f"bike/{bike_id}/fleet"
-    payload = json.dumps(fleet_data)
-    return publish_message(topic, payload)
-
-
-def publish_bike_sport_metrics(bike_id: str, sport_data: dict) -> bool:
-    """發布運動資料"""
-    topic = f"bike/{bike_id}/sport"
-    payload = json.dumps(sport_data)
     return publish_message(topic, payload)

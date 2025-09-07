@@ -17,12 +17,7 @@ sys.path.append('/usr/src/app')
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'koala.settings')
 django.setup()
 
-from koala.mqtt import (
-    mqtt_client,
-    publish_bike_fleet_status,
-    publish_bike_sport_metrics,
-    publish_bike_telemetry,
-)
+from koala.mqtt import mqtt_client, publish_bike_telemetry
 
 
 def test_mqtt_connection():
@@ -57,53 +52,6 @@ def test_telemetry_message():
         print(f"✓ 遙測消息發布成功: bike/{bike_id}/telemetry")
     else:
         print('✗ 遙測消息發布失敗')
-
-    return success
-
-
-def test_fleet_message():
-    """測試車隊管理消息發布"""
-    print('\n🧪 測試車隊管理消息發布...')
-
-    bike_id = 'test_bike_001'
-    fleet_data = {
-        'status': 'available',
-        'zone': 'downtown_01',
-        'last_maintenance': '2024-01-15',
-        'parking_location': {'station_id': 'station_001', 'slot_number': 5},
-        'test': True,
-    }
-
-    success = publish_bike_fleet_status(bike_id, fleet_data)
-    if success:
-        print(f"✓ 車隊管理消息發布成功: bike/{bike_id}/fleet")
-    else:
-        print('✗ 車隊管理消息發布失敗')
-
-    return success
-
-
-def test_sport_message():
-    """測試運動消息發布"""
-    print('\n🧪 測試運動消息發布...')
-
-    bike_id = 'test_bike_001'
-    sport_data = {
-        'user_id': 'test_user_001',
-        'session_id': f'session_test_{int(time.time())}',
-        'distance': 5.2,
-        'duration': 1800,
-        'calories_burned': 180,
-        'average_speed': 10.4,
-        'max_speed': 15.0,
-        'test': True,
-    }
-
-    success = publish_bike_sport_metrics(bike_id, sport_data)
-    if success:
-        print(f"✓ 運動消息發布成功: bike/{bike_id}/sport")
-    else:
-        print('✗ 運動消息發布失敗')
 
     return success
 
@@ -146,8 +94,6 @@ def main():
         # 測試各種消息類型
         test_results = []
         test_results.append(test_telemetry_message())
-        test_results.append(test_fleet_message())
-        test_results.append(test_sport_message())
         test_results.append(test_unknown_message())
 
         # 等待消息處理
