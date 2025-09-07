@@ -31,7 +31,7 @@ class RBACModelPermissionScope(models.Model):
     type = models.CharField(max_length=50, choices=TYPE_OPTIONS)
     group = models.CharField(max_length=50, blank=True)
     details = models.JSONField(default=dict, blank=True)
-    is_active = models.BooleanField(default=True, db_index=True)
+    is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -109,9 +109,9 @@ class RBACPermission(models.Model):
         on_delete=models.CASCADE,
         related_name='rbac_permissions',
     )
-    action = models.CharField(max_length=50, choices=ACTION_OPTIONS, db_index=True)
+    action = models.CharField(max_length=50, choices=ACTION_OPTIONS)
     row_access = models.CharField(
-        max_length=50, choices=ROW_ACCESS_OPTIONS, default=ROW_ACCESS_ALL, db_index=True
+        max_length=50, choices=ROW_ACCESS_OPTIONS, default=ROW_ACCESS_ALL
     )
     description = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -120,6 +120,7 @@ class RBACPermission(models.Model):
         unique_together = ['scope', 'action', 'row_access']
         indexes = [
             models.Index(fields=['scope', 'action']),
+            models.Index(fields=['action']),
             models.Index(fields=['row_access']),
         ]
 
@@ -171,7 +172,7 @@ class StaffRBACRole(RBACRole):
 class UserProfile(RBACPermissionModelMixin, models.Model):
     username = models.CharField(max_length=100, unique=True)
     email = models.EmailField(max_length=254, blank=True)
-    is_active = models.BooleanField(default=True, db_index=True)
+    is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

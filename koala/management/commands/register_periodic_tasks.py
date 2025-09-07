@@ -30,6 +30,10 @@ class Command(BaseCommand):
             task = config['task']
             schedule = config['schedule']
 
+            self.stdout.write(
+                f"🔧 Processing task: {name} → {task} (schedule: {schedule})"
+            )
+
             if isinstance(schedule, crontab):
                 cron, _ = CrontabSchedule.objects.get_or_create(
                     minute=schedule._orig_minute,
@@ -48,7 +52,41 @@ class Command(BaseCommand):
                         'start_time': now(),
                     },
                 )
-                self.stdout.write(f"📝 Registered: {name} → {task}")
+                self.stdout.write(f"📝 Registered crontab task: {name} → {task}")
+            elif isinstance(schedule, (int, float)):
+                # 支援數字間隔（秒）
+                from django_celery_beat.models import IntervalSchedule
+
+                # 先嘗試取得現有的，如果有多個就取第一個
+                try:
+                    interval = IntervalSchedule.objects.filter(
+                        every=int(schedule),
+                        period=IntervalSchedule.SECONDS,
+                    ).first()
+                    if not interval:
+                        interval = IntervalSchedule.objects.create(
+                            every=int(schedule),
+                            period=IntervalSchedule.SECONDS,
+                        )
+                except Exception as e:
+                    self.stdout.write(f"⚠️ Error creating IntervalSchedule: {e}")
+                    continue
+                PeriodicTask.objects.update_or_create(
+                    name=name,
+                    defaults={
+                        'task': task,
+                        'interval': interval,
+                        'enabled': True,
+                        'start_time': now(),
+                    },
+                )
+                self.stdout.write(
+                    f"📝 Registered interval task: {name} → {task} (every {schedule}s)"
+                )
+            else:
+                self.stdout.write(
+                    f"⚠️ Unsupported schedule type for {name}: {type(schedule)}"
+                )
 
         self.stdout.write(
             self.style.SUCCESS('🎉 All beat tasks registered successfully.')

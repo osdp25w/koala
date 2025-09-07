@@ -54,10 +54,10 @@ INSTALLED_APPS = [
 START_APPS = [
     'koala',
     'account',
-    # 'listening_profile',
-    # 'playlist',
-    # 'provider',
-    # 'track',
+    'bike',
+    'telemetry',
+    'rental',
+    'statistic',
 ]
 
 INSTALLED_APPS += START_APPS
@@ -263,14 +263,10 @@ MQTT_CONFIG = {
     'RECONNECT_DELAY': 5,
     'MAX_RECONNECT_ATTEMPTS': 10,
     'TOPICS': {
-        'USER_TELEMETRY': 'bike/+/telemetry',  # 使用者資料
-        'FLEET_STATUS': 'bike/+/fleet',  # 車輛管理資料
-        'SPORT_METRICS': 'bike/+/sport',  # 到店後運動資料
+        'TELEMETRY': 'bike/+/telemetry',  # 遙測數據
     },
     'AUTO_SUBSCRIBE_TOPICS': [
         'bike/+/telemetry',
-        'bike/+/fleet',
-        'bike/+/sport',
     ],
 }
 
@@ -288,8 +284,9 @@ CELERY_MQTT_CONFIG = {
     'RESULT_SERIALIZER': 'json',
     'MESSAGE_TYPES': {
         'telemetry': '遙測數據',
-        'fleet': '車隊管理',
-        'sport': '運動數據',
         'unknown': '未知類型',
     },
 }
+
+# psqlextra 分區管理配置
+PSQLEXTRA_PARTITIONING_MANAGER = 'koala.partitioning.manager'

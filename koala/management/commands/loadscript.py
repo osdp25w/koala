@@ -59,7 +59,7 @@ class Command(BaseCommand):
             )
             if not dry_run:
                 confirm = input(
-                    f"⚠️ 你將執行 {len(matched_files)} 個 script，確定要繼續？(y/N): "
+                    f"⚠️ 你將執行 {len(matched_files)} 個 scripts，確定要繼續？(y/N): "
                 ).lower()
                 if confirm != 'y':
                     self.stdout.write(self.style.WARNING('❎ 操作已取消'))
