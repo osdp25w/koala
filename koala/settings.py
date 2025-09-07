@@ -36,6 +36,8 @@ CORS_ALLOWED_ORIGINS = (
     'http://localhost:8000',
     'http://localhost:8081',
     'http://localhost:8080',
+    'https://penguin.osdp25w.xyz',
+    'http://penguin-service.penguin.svc.cluster.local',
 )
 
 CORS_ALLOWED_ORIGIN_REGEXES = ()
