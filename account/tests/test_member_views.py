@@ -234,7 +234,7 @@ class MemberRegistrationViewSetTest(APITestCase):
             'password': encrypted_password,
             'full_name': 'New Member',
             'phone': '+886900000000',
-            'type': Member.TYPE_TOURIST,
+            'type': Member.TypeOptions.TOURIST,
         }
 
         response = self.client.post(self.registration_url, registration_data)
@@ -252,7 +252,7 @@ class MemberRegistrationViewSetTest(APITestCase):
 
         member = Member.objects.get(username='newmember')
         self.assertEqual(member.full_name, 'New Member')
-        self.assertEqual(member.type, Member.TYPE_TOURIST)
+        self.assertEqual(member.type, Member.TypeOptions.TOURIST)
 
     def test_member_registration_duplicate_username(self):
         """測試重複用戶名註冊"""
@@ -264,7 +264,7 @@ class MemberRegistrationViewSetTest(APITestCase):
             user=existing_user,
             username='existing',
             full_name='Existing Member',
-            type=Member.TYPE_TOURIST,
+            type=Member.TypeOptions.TOURIST,
         )
 
         registration_data = {

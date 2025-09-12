@@ -3,6 +3,7 @@ from typing import Optional, Set, Union
 from django.contrib.auth.models import User
 from django.contrib.contenttypes.models import ContentType
 from django.db import models
+from phonenumber_field.modelfields import PhoneNumberField
 
 from account.mixins.model_mixins import RBACPermissionModelMixin
 from account.services import RBACModelPermissionScopeModelService
@@ -12,13 +13,9 @@ from utils.encryption import encrypted_fields
 class RBACModelPermissionScope(models.Model):
     MODEL_SERVICE_CLASS = RBACModelPermissionScopeModelService
 
-    TYPE_BASE = 'base'
-    TYPE_EXTENSION = 'extension'
-
-    TYPE_OPTIONS = [
-        (TYPE_BASE, 'Base'),
-        (TYPE_EXTENSION, 'Extension'),
-    ]
+    class TypeOptions(models.TextChoices):
+        BASE = ('base', 'Base')
+        EXTENSION = ('extension', 'Extension')
 
     code = models.CharField(max_length=100, unique=True)
     name = models.CharField(max_length=100)
@@ -28,7 +25,7 @@ class RBACModelPermissionScope(models.Model):
     )
     included_fields = models.JSONField(default=list, blank=True)
     excluded_fields = models.JSONField(default=list, blank=True)
-    type = models.CharField(max_length=50, choices=TYPE_OPTIONS)
+    type = models.CharField(max_length=50, choices=TypeOptions.choices)
     group = models.CharField(max_length=50, blank=True)
     details = models.JSONField(default=dict, blank=True)
     is_active = models.BooleanField(default=True)
@@ -80,38 +77,26 @@ class RBACModelPermissionScope(models.Model):
 
 
 class RBACPermission(models.Model):
-    ACTION_CREATE = 'create'
-    ACTION_GET = 'get'
-    ACTION_UPDATE = 'update'
-    ACTION_DELETE = 'delete'
-    ACTION_EXPORT = 'export'
+    class ActionOptions(models.TextChoices):
+        CREATE = ('create', 'Create')
+        GET = ('get', 'Get')
+        UPDATE = ('update', 'Update')
+        DELETE = ('delete', 'Delete')
+        EXPORT = ('export', 'Export')
 
-    ACTION_OPTIONS = [
-        (ACTION_CREATE, 'Create'),
-        (ACTION_GET, 'Get'),
-        (ACTION_UPDATE, 'Update'),
-        (ACTION_DELETE, 'Delete'),
-        (ACTION_EXPORT, 'Export'),
-    ]
-
-    ROW_ACCESS_ALL = 'all'
-    ROW_ACCESS_PROFILE_HIERARCHY = 'profile_hierarchy'
-    ROW_ACCESS_OWN = 'own'
-
-    ROW_ACCESS_OPTIONS = [
-        (ROW_ACCESS_ALL, 'All'),
-        (ROW_ACCESS_PROFILE_HIERARCHY, 'Profile Hierarchy'),
-        (ROW_ACCESS_OWN, 'Own'),
-    ]
+    class RowAccessOptions(models.TextChoices):
+        ALL = ('all', 'All')
+        PROFILE_HIERARCHY = ('profile_hierarchy', 'Profile Hierarchy')
+        OWN = ('own', 'Own')
 
     scope = models.ForeignKey(
         RBACModelPermissionScope,
         on_delete=models.CASCADE,
         related_name='rbac_permissions',
     )
-    action = models.CharField(max_length=50, choices=ACTION_OPTIONS)
+    action = models.CharField(max_length=50, choices=ActionOptions.choices)
     row_access = models.CharField(
-        max_length=50, choices=ROW_ACCESS_OPTIONS, default=ROW_ACCESS_ALL
+        max_length=50, choices=RowAccessOptions.choices, default=RowAccessOptions.ALL
     )
     description = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -186,16 +171,13 @@ class UserProfile(RBACPermissionModelMixin, models.Model):
 
 @encrypted_fields('national_id')
 class Member(UserProfile):
-    TYPE_TOURIST = 'tourist'
-    TYPE_REAL = 'real'
-    TYPE_OPTIONS = [
-        (TYPE_TOURIST, 'Tourist'),
-        (TYPE_REAL, 'Real'),
-    ]
+    class TypeOptions(models.TextChoices):
+        TOURIST = ('tourist', 'Tourist')
+        REAL = ('real', 'Real')
 
     TYPE_HIERARCHY = {
-        TYPE_TOURIST: 1,
-        TYPE_REAL: 2,
+        TypeOptions.TOURIST: 1,
+        TypeOptions.REAL: 2,
     }
 
     user = models.OneToOneField(
@@ -204,9 +186,11 @@ class Member(UserProfile):
     rbac_roles = models.ManyToManyField(
         RBACRole, related_name='member_profiles', blank=True
     )
-    type = models.CharField(max_length=50, choices=TYPE_OPTIONS, default=TYPE_TOURIST)
+    type = models.CharField(
+        max_length=50, choices=TypeOptions.choices, default=TypeOptions.TOURIST
+    )
     full_name = models.CharField(max_length=100, blank=True)
-    phone = models.TextField(blank=True)
+    phone = PhoneNumberField(blank=True, unique=True, null=True)
     _national_id = models.TextField(blank=True, db_column='national_id')
 
     def clean(self):
@@ -222,16 +206,13 @@ class Member(UserProfile):
 
 
 class Staff(UserProfile):
-    TYPE_STAFF = 'staff'
-    TYPE_ADMIN = 'admin'
-    TYPE_OPTIONS = [
-        (TYPE_STAFF, 'Staff'),
-        (TYPE_ADMIN, 'Admin'),
-    ]
+    class TypeOptions(models.TextChoices):
+        STAFF = ('staff', 'Staff')
+        ADMIN = ('admin', 'Admin')
 
     TYPE_HIERARCHY = {
-        TYPE_STAFF: 1,
-        TYPE_ADMIN: 2,
+        TypeOptions.STAFF: 1,
+        TypeOptions.ADMIN: 2,
     }
 
     user = models.OneToOneField(
@@ -240,7 +221,9 @@ class Staff(UserProfile):
     rbac_roles = models.ManyToManyField(
         RBACRole, related_name='staff_profiles', blank=True
     )
-    type = models.CharField(max_length=50, choices=TYPE_OPTIONS, default=TYPE_STAFF)
+    type = models.CharField(
+        max_length=50, choices=TypeOptions.choices, default=TypeOptions.STAFF
+    )
     # add Staff's unique column
 
 

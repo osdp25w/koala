@@ -34,7 +34,7 @@ class CustomScript(BaseScript):
                     'created_at',
                     'updated_at',
                 ],
-                'type': RBACModelPermissionScope.TYPE_BASE,
+                'type': RBACModelPermissionScope.TypeOptions.BASE,
             },
         )
         print(f"{'✓ 創建' if created else '○ 已存在'} {member_basic_scope}")
@@ -46,7 +46,7 @@ class CustomScript(BaseScript):
                 'related_model': member_ct,
                 'parent': member_basic_scope,
                 'included_fields': ['phone', 'national_id'],
-                'type': RBACModelPermissionScope.TYPE_EXTENSION,
+                'type': RBACModelPermissionScope.TypeOptions.EXTENSION,
             },
         )
         print(f"{'✓ 創建' if created else '○ 已存在'} {member_all_scope}")
@@ -65,7 +65,7 @@ class CustomScript(BaseScript):
                     'created_at',
                     'updated_at',
                 ],
-                'type': RBACModelPermissionScope.TYPE_BASE,
+                'type': RBACModelPermissionScope.TypeOptions.BASE,
             },
         )
         print(f"{'✓ 創建' if created else '○ 已存在'} {staff_basic_scope}")
@@ -76,82 +76,82 @@ class CustomScript(BaseScript):
             # Member basic permissions
             (
                 member_basic_scope,
-                RBACPermission.ACTION_GET,
-                RBACPermission.ROW_ACCESS_PROFILE_HIERARCHY,
+                RBACPermission.ActionOptions.GET,
+                RBACPermission.RowAccessOptions.PROFILE_HIERARCHY,
                 'Tourist/Real 查看同級或低級會員基本資訊',
             ),
             # Member all permissions
             (
                 member_all_scope,
-                RBACPermission.ACTION_GET,
-                RBACPermission.ROW_ACCESS_OWN,
+                RBACPermission.ActionOptions.GET,
+                RBACPermission.RowAccessOptions.OWN,
                 'Tourist/Real 查看自己完整資訊',
             ),
             (
                 member_all_scope,
-                RBACPermission.ACTION_UPDATE,
-                RBACPermission.ROW_ACCESS_OWN,
+                RBACPermission.ActionOptions.UPDATE,
+                RBACPermission.RowAccessOptions.OWN,
                 'Tourist/Real 更新自己完整資訊',
             ),
             (
                 member_all_scope,
-                RBACPermission.ACTION_GET,
-                RBACPermission.ROW_ACCESS_ALL,
+                RBACPermission.ActionOptions.GET,
+                RBACPermission.RowAccessOptions.ALL,
                 'Staff/Admin 查看所有會員完整資訊',
             ),
             (
                 member_all_scope,
-                RBACPermission.ACTION_CREATE,
-                RBACPermission.ROW_ACCESS_ALL,
+                RBACPermission.ActionOptions.CREATE,
+                RBACPermission.RowAccessOptions.ALL,
                 'Staff/Admin 創建會員完整資料',
             ),
             (
                 member_all_scope,
-                RBACPermission.ACTION_UPDATE,
-                RBACPermission.ROW_ACCESS_ALL,
+                RBACPermission.ActionOptions.UPDATE,
+                RBACPermission.RowAccessOptions.ALL,
                 'Staff/Admin 更新所有會員完整資訊',
             ),
             (
                 member_all_scope,
-                RBACPermission.ACTION_DELETE,
-                RBACPermission.ROW_ACCESS_ALL,
+                RBACPermission.ActionOptions.DELETE,
+                RBACPermission.RowAccessOptions.ALL,
                 'Staff/Admin 刪除會員',
             ),
             # Staff permissions
             (
                 staff_basic_scope,
-                RBACPermission.ACTION_UPDATE,
-                RBACPermission.ROW_ACCESS_OWN,
+                RBACPermission.ActionOptions.UPDATE,
+                RBACPermission.RowAccessOptions.OWN,
                 'Staff/Admin 更新自己資訊',
             ),
             (
                 staff_basic_scope,
-                RBACPermission.ACTION_GET,
-                RBACPermission.ROW_ACCESS_PROFILE_HIERARCHY,
+                RBACPermission.ActionOptions.GET,
+                RBACPermission.RowAccessOptions.PROFILE_HIERARCHY,
                 'Staff/Admin 查看同級或低級員工',
             ),
             (
                 staff_basic_scope,
-                RBACPermission.ACTION_GET,
-                RBACPermission.ROW_ACCESS_ALL,
+                RBACPermission.ActionOptions.GET,
+                RBACPermission.RowAccessOptions.ALL,
                 'Admin 查看所有員工',
             ),
             (
                 staff_basic_scope,
-                RBACPermission.ACTION_CREATE,
-                RBACPermission.ROW_ACCESS_ALL,
+                RBACPermission.ActionOptions.CREATE,
+                RBACPermission.RowAccessOptions.ALL,
                 'Admin 創建員工',
             ),
             (
                 staff_basic_scope,
-                RBACPermission.ACTION_UPDATE,
-                RBACPermission.ROW_ACCESS_ALL,
+                RBACPermission.ActionOptions.UPDATE,
+                RBACPermission.RowAccessOptions.ALL,
                 'Admin 更新員工資訊',
             ),
             (
                 staff_basic_scope,
-                RBACPermission.ACTION_DELETE,
-                RBACPermission.ROW_ACCESS_ALL,
+                RBACPermission.ActionOptions.DELETE,
+                RBACPermission.RowAccessOptions.ALL,
                 'Admin 刪除員工',
             ),
         ]
@@ -237,23 +237,23 @@ class CustomScript(BaseScript):
         print('\n分配用戶角色...')
 
         # 為所有 Member 分配對應角色
-        tourists = Member.objects.filter(type=Member.TYPE_TOURIST)
+        tourists = Member.objects.filter(type=Member.TypeOptions.TOURIST)
         for member in tourists:
             member.rbac_roles.add(tourist_role)
         print(f"✓ 為 {tourists.count()} 個 Tourist 分配角色")
 
-        real_members = Member.objects.filter(type=Member.TYPE_REAL)
+        real_members = Member.objects.filter(type=Member.TypeOptions.REAL)
         for member in real_members:
             member.rbac_roles.add(real_member_role)
         print(f"✓ 為 {real_members.count()} 個 Real Member 分配角色")
 
         # 為所有 Staff 分配對應角色
-        staffs = Staff.objects.filter(type=Staff.TYPE_STAFF)
+        staffs = Staff.objects.filter(type=Staff.TypeOptions.STAFF)
         for staff in staffs:
             staff.rbac_roles.add(staff_role)
         print(f"✓ 為 {staffs.count()} 個 Staff 分配角色")
 
-        admins = Staff.objects.filter(type=Staff.TYPE_ADMIN)
+        admins = Staff.objects.filter(type=Staff.TypeOptions.ADMIN)
         for admin in admins:
             admin.rbac_roles.add(admin_role)
         print(f"✓ 為 {admins.count()} 個 Admin 分配角色")

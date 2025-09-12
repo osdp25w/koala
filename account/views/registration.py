@@ -48,9 +48,9 @@ class MemberRegistrationViewSet(mixins.CreateModelMixin, BaseGenericViewSet):
         """為新註冊會員分配默認角色"""
         try:
             # 根據會員類型分配對應角色
-            if member.type == Member.TYPE_TOURIST:
+            if member.type == Member.TypeOptions.TOURIST:
                 role_name = 'tourist_role'
-            elif member.type == Member.TYPE_REAL:
+            elif member.type == Member.TypeOptions.REAL:
                 role_name = 'real_member_role'
             else:
                 role_name = 'tourist_role'  # 默認為觀光客角色

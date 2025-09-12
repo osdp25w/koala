@@ -112,7 +112,7 @@ class HourlyStatisticsService:
         return distance_km * CARBON_REDUCTION_RATE
 
     @classmethod
-    def create_hourly_statistics(cls, target_datetime: datetime) -> Dict:
+    def collect_hourly_statistics(cls, target_datetime: datetime) -> Dict:
         """創建小時統計記錄"""
         try:
             # 計算各項統計
@@ -272,7 +272,7 @@ class DailyStatisticsService:
             return 0.0
 
     @classmethod
-    def create_daily_statistics(cls, date) -> Dict:
+    def collect_daily_statistics(cls, date) -> Dict:
         """創建每日統計記錄"""
         try:
             logger.info(f"Starting daily statistics calculation for {date}")

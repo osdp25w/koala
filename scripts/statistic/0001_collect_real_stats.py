@@ -72,7 +72,7 @@ class CustomScript(BaseScript):
 
                 try:
                     # 生成統計
-                    result = HourlyStatisticsService.create_hourly_statistics(
+                    result = HourlyStatisticsService.collect_hourly_statistics(
                         target_datetime
                     )
 
@@ -124,7 +124,7 @@ class CustomScript(BaseScript):
 
             try:
                 # 生成統計
-                result = DailyStatisticsService.create_daily_statistics(current_date)
+                result = DailyStatisticsService.collect_daily_statistics(current_date)
 
                 if result['success']:
                     success_days += 1

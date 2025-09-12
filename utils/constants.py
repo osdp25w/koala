@@ -54,7 +54,15 @@ class ResponseCode:
     METHOD_NOT_ALLOWED = 4001  # HTTP method not supported
     NOT_FOUND = 4002  # Requested resource not found
     USER_NOT_FOUND = 4003  # Specific user not found
+    MEMBER_NOT_FOUND = 4004  # Member not found by email/phone
+    MULTIPLE_MEMBERS_FOUND = 4005  # Multiple members found with same email/phone
     CONFLICT = 4009  # Data conflict or duplicate entry
+
+    # Bike rental related errors
+    BIKE_NOT_AVAILABLE = 4010  # Bike is not available for rent
+    MEMBER_ALREADY_HAS_BIKE = 4011  # Member already has a rented bike
+    BIKE_NOT_RENTED_BY_MEMBER = 4012  # Member trying to return a bike they didn't rent
+    INVALID_RENTAL_ACTION = 4013  # Invalid rental action provided
 
     FORBIDDEN = 4030  # Access forbidden
     UNKNOWN_ERROR = 4999  # Unhandled client error
@@ -77,7 +85,18 @@ class ResponseMessage:
     METHOD_NOT_ALLOWED = 'method not allowed'  # HTTP method not supported
     NOT_FOUND = 'resource not found'  # Resource does not exist
     USER_NOT_FOUND = 'user not found'  # User does not exist
+    MEMBER_NOT_FOUND = 'member not found'  # Member not found by email/phone
+    MULTIPLE_MEMBERS_FOUND = (
+        'multiple members found'  # Multiple members found with same email/phone
+    )
     CONFLICT = 'data conflict'  # Data conflict or duplicate
+
+    # Bike rental related messages
+    BIKE_NOT_AVAILABLE = 'bike not available for rent'
+    MEMBER_ALREADY_HAS_BIKE = 'member already has a rented bike'
+    BIKE_NOT_RENTED_BY_MEMBER = 'bike not rented by this member'
+    INVALID_RENTAL_ACTION = 'invalid rental action'
+
     FORBIDDEN = 'forbidden'  # Access forbidden
     UNKNOWN_ERROR = 'request failed'  # Unhandled error
 

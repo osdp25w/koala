@@ -58,10 +58,10 @@ class CustomScript(BaseScript):
 
                 # 決定租賃狀態
                 status_weights = {
-                    BikeRental.RENTAL_STATUS_COMPLETED: 0.7,  # 70% 已完成
-                    BikeRental.RENTAL_STATUS_ACTIVE: 0.1,  # 10% 進行中
-                    BikeRental.RENTAL_STATUS_CANCELLED: 0.15,  # 15% 已取消
-                    BikeRental.RENTAL_STATUS_RESERVED: 0.05,  # 5% 預約中
+                    BikeRental.RentalStatusOptions.COMPLETED: 0.7,  # 70% 已完成
+                    BikeRental.RentalStatusOptions.ACTIVE: 0.1,  # 10% 進行中
+                    BikeRental.RentalStatusOptions.CANCELLED: 0.15,  # 15% 已取消
+                    BikeRental.RentalStatusOptions.RESERVED: 0.05,  # 5% 預約中
                 }
 
                 rental_status = random.choices(
@@ -72,7 +72,7 @@ class CustomScript(BaseScript):
                 end_time = None
                 total_fee = Decimal('0.00')
 
-                if rental_status == BikeRental.RENTAL_STATUS_COMPLETED:
+                if rental_status == BikeRental.RentalStatusOptions.COMPLETED:
                     # 已完成：有結束時間和費用
                     duration_minutes = random.randint(15, 180)  # 15分鐘到3小時
                     end_time = start_time + timedelta(minutes=duration_minutes)
@@ -82,12 +82,12 @@ class CustomScript(BaseScript):
                     time_fee = Decimal(str(duration_minutes)) * Decimal('0.5')
                     total_fee = base_fee + time_fee
 
-                elif rental_status == BikeRental.RENTAL_STATUS_CANCELLED:
+                elif rental_status == BikeRental.RentalStatusOptions.CANCELLED:
                     # 已取消：可能有取消費用
                     if random.random() > 0.5:  # 50% 機率收取取消費用
                         total_fee = Decimal('5.00')  # 取消手續費
 
-                elif rental_status == BikeRental.RENTAL_STATUS_ACTIVE:
+                elif rental_status == BikeRental.RentalStatusOptions.ACTIVE:
                     # 進行中：確保開始時間不要太久之前
                     start_time = base_time - timedelta(hours=random.uniform(0, 6))
 
@@ -129,7 +129,7 @@ class CustomScript(BaseScript):
             print(f"\n租賃狀態分布:")
             status_counts = {}
             for rental in rentals:
-                status_display = dict(BikeRental.RENTAL_STATUS_OPTIONS).get(
+                status_display = dict(BikeRental.RentalStatusOptions.choices).get(
                     rental.rental_status, rental.rental_status
                 )
                 status_counts[status_display] = status_counts.get(status_display, 0) + 1
@@ -142,7 +142,7 @@ class CustomScript(BaseScript):
             completed_rentals = [
                 r
                 for r in rentals
-                if r.rental_status == BikeRental.RENTAL_STATUS_COMPLETED
+                if r.rental_status == BikeRental.RentalStatusOptions.COMPLETED
             ]
             avg_fee = (
                 total_revenue / len(completed_rentals)

@@ -51,9 +51,10 @@ class RBACModelTest(TestCase):
         basic_permission = RBACPermission.objects.get(pk=1)
 
         self.assertEqual(basic_permission.scope, self.member_scope)
-        self.assertEqual(basic_permission.action, RBACPermission.ACTION_GET)
+        self.assertEqual(basic_permission.action, RBACPermission.ActionOptions.GET)
         self.assertEqual(
-            basic_permission.row_access, RBACPermission.ROW_ACCESS_PROFILE_HIERARCHY
+            basic_permission.row_access,
+            RBACPermission.RowAccessOptions.PROFILE_HIERARCHY,
         )
 
     def test_rbac_role_permissions(self):
@@ -97,13 +98,13 @@ class RBACPermissionMixinTest(TestCase):
 
         # 測試有權限的情況
         has_permission = self.member.has_model_permission(
-            Member, RBACPermission.ACTION_GET
+            Member, RBACPermission.ActionOptions.GET
         )
         self.assertTrue(has_permission)
 
         # 測試沒有權限的情況
         has_permission = self.member.has_model_permission(
-            Member, RBACPermission.ACTION_CREATE
+            Member, RBACPermission.ActionOptions.CREATE
         )
         self.assertFalse(has_permission)
 
@@ -113,7 +114,7 @@ class RBACPermissionMixinTest(TestCase):
         PermissionCache.clear_profile_cache(self.member)
 
         allowed_fields = self.member.get_allowed_fields(
-            Member, RBACPermission.ACTION_GET
+            Member, RBACPermission.ActionOptions.GET
         )
 
         self.assertIn('id', allowed_fields)

@@ -124,12 +124,13 @@ class CustomScript(BaseScript):
                 bike=bike,
                 latitude=base_lat + lat_offset,
                 longitude=base_lng + lng_offset,
-                battery_level=random.randint(20, 100),
+                soc=random.randint(20, 100),
+                vehicle_speed=0,  # 預設速度為 0
                 status=random.choice(
                     [
-                        BikeRealtimeStatus.STATUS_IDLE,
-                        BikeRealtimeStatus.STATUS_IDLE,  # 增加閒置的機率
-                        BikeRealtimeStatus.STATUS_MAINTENANCE,
+                        BikeRealtimeStatus.StatusOptions.IDLE,
+                        BikeRealtimeStatus.StatusOptions.IDLE,  # 增加閒置的機率
+                        BikeRealtimeStatus.StatusOptions.MAINTENANCE,
                     ]
                 ),
                 last_seen=timezone.now(),

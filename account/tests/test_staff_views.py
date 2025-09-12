@@ -61,7 +61,7 @@ class StaffViewSetTest(BaseAPITestWithFixtures):
         data = response.data
         self.assertEqual(data['id'], self.staff1.id)
         self.assertEqual(data['username'], 'teststaff1')  # fixture 中的實際用戶名
-        self.assertEqual(data['type'], Staff.TYPE_STAFF)
+        self.assertEqual(data['type'], Staff.TypeOptions.STAFF)
 
     def test_staff_update_own_record(self):
         """測試更新自己的 Staff 資訊"""
@@ -103,7 +103,7 @@ class StaffViewSetTest(BaseAPITestWithFixtures):
         """測試 Admin 更新一般 Staff 資訊"""
         self.client.credentials(HTTP_AUTHORIZATION=self._get_auth_header(self.admin1))
 
-        update_data = {'type': Staff.TYPE_ADMIN}  # 將 staff 升級為 admin
+        update_data = {'type': Staff.TypeOptions.ADMIN}  # 將 staff 升級為 admin
 
         response = self.client.patch(self.update_url(self.staff1.id), update_data)
 
@@ -111,7 +111,7 @@ class StaffViewSetTest(BaseAPITestWithFixtures):
         # 如果成功，驗證更新
         if response.status_code == status.HTTP_200_OK:
             self.staff1.refresh_from_db()
-            self.assertEqual(self.staff1.type, Staff.TYPE_ADMIN)
+            self.assertEqual(self.staff1.type, Staff.TypeOptions.ADMIN)
 
     def test_staff_delete_own_record(self):
         """測試刪除自己的 Staff 記錄"""

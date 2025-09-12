@@ -77,20 +77,14 @@ class BikeInfo(models.Model):
 
 
 class BikeRealtimeStatus(models.Model):
-    STATUS_IDLE = 'idle'
-    STATUS_RENTED = 'rented'
-    STATUS_MAINTENANCE = 'maintenance'
-    STATUS_ERROR = 'error'
+    class StatusOptions(models.TextChoices):
+        IDLE = ('idle', 'Idle')
+        RENTED = ('rented', 'Rented')
+        MAINTENANCE = ('maintenance', 'Maintenance')
+        ERROR = ('error', 'Error')
 
-    STATUS_ONLINE = (STATUS_IDLE, STATUS_RENTED)
-    STATUS_OFFLINE = (STATUS_MAINTENANCE, STATUS_ERROR)
-
-    STATUS_OPTIONS = [
-        (STATUS_IDLE, 'Idle'),
-        (STATUS_RENTED, 'Rented'),
-        (STATUS_MAINTENANCE, 'Maintenance'),
-        (STATUS_ERROR, 'Error'),
-    ]
+    STATUS_ONLINE = (StatusOptions.IDLE, StatusOptions.RENTED)
+    STATUS_OFFLINE = (StatusOptions.MAINTENANCE, StatusOptions.ERROR)
     bike = models.OneToOneField(
         BikeInfo,
         on_delete=models.CASCADE,
@@ -99,23 +93,27 @@ class BikeRealtimeStatus(models.Model):
     )
     latitude = models.IntegerField(verbose_name='緯度 * 10^6')
     longitude = models.IntegerField(verbose_name='經度 * 10^6')
-    battery_level = models.SmallIntegerField()
+    soc = models.SmallIntegerField()
+    vehicle_speed = models.SmallIntegerField()
 
     status = models.CharField(
         max_length=50,
-        choices=STATUS_OPTIONS,
-        default=STATUS_IDLE,
+        choices=StatusOptions.choices,
+        default=StatusOptions.IDLE,
     )
 
     orig_status = models.CharField(
         max_length=50,
-        choices=STATUS_OPTIONS,
+        choices=StatusOptions.choices,
         null=True,
         blank=True,
     )
-    current_member_ids = models.JSONField(
-        default=list,
+    current_member = models.OneToOneField(
+        'account.Member',
+        null=True,
         blank=True,
+        on_delete=models.SET_NULL,
+        related_name='bike_realtime_status',
     )
     last_seen = models.DateTimeField()
     updated_at = models.DateTimeField(auto_now=True)
@@ -130,6 +128,25 @@ class BikeRealtimeStatus(models.Model):
     def __str__(self):
         return f"{self.bike.bike_id} - {self.get_status_display()}"
 
+    def delete(self, using=None, keep_parents=False):
+        from django.core.exceptions import ValidationError
+
+        if self.bike:  # 如果還有關聯的 bike
+            raise ValidationError(f"無法刪除 bike {self.bike.bike_id} 的即時狀態記錄，請先刪除 bike")
+        return super().delete(using=using, keep_parents=keep_parents)
+
+    def save(self, *args, **kwargs):
+        # 如果不是新建記錄，且 status 有變更，保存上一個狀態到 orig_status
+        if self.pk is not None:  # 不是新建記錄
+            try:
+                old_instance = BikeRealtimeStatus.objects.get(pk=self.pk)
+                if old_instance.status != self.status:
+                    self.orig_status = old_instance.status
+            except BikeRealtimeStatus.DoesNotExist:
+                pass  # 如果找不到舊記錄，不處理
+
+        super().save(*args, **kwargs)
+
     def get_is_rentable(self):
         """
         判斷車輛是否可出借
@@ -137,7 +154,7 @@ class BikeRealtimeStatus(models.Model):
         Returns:
             bool: 只有當狀態為 IDLE 時才可出借
         """
-        return self.status == self.STATUS_IDLE
+        return self.status == self.StatusOptions.IDLE
 
     @property
     def lat_decimal(self):
@@ -151,20 +168,10 @@ class BikeRealtimeStatus(models.Model):
 
 
 class BikeErrorLog(models.Model):
-    """
-    車輛錯誤日誌模型
-    記錄車輛相關的各種錯誤和異常狀況
-    """
-
-    LEVEL_INFO = 'info'
-    LEVEL_WARNING = 'warning'
-    LEVEL_CRITICAL = 'critical'
-
-    LEVEL_CHOICES = [
-        (LEVEL_INFO, 'Info'),
-        (LEVEL_WARNING, 'Warning'),
-        (LEVEL_CRITICAL, 'Critical'),
-    ]
+    class LevelOptions(models.TextChoices):
+        INFO = ('info', 'Info')
+        WARNING = ('warning', 'Warning')
+        CRITICAL = ('critical', 'Critical')
 
     code = models.CharField(max_length=50)
     bike = models.ForeignKey(
@@ -175,7 +182,7 @@ class BikeErrorLog(models.Model):
         blank=True,
     )
     level = models.CharField(
-        max_length=20, choices=LEVEL_CHOICES, default=LEVEL_WARNING
+        max_length=20, choices=LevelOptions.choices, default=LevelOptions.WARNING
     )
 
     title = models.CharField(max_length=200)

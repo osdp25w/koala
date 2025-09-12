@@ -6,7 +6,6 @@ from django.utils import timezone
 
 from statistic.models import HourlyOverviewStatistics
 from statistic.services import DailyStatisticsService, HourlyStatisticsService
-from utils.decorators import celery_retry
 
 logger = logging.getLogger(__name__)
 
@@ -50,8 +49,7 @@ def trigger_daily_statistics():
     return f"Triggered daily statistics for {target_date_str}"
 
 
-@shared_task(bind=True, queue='statistics_q')
-@celery_retry(max_retries=3, countdown=15)  # 3次重試，間隔15秒
+@shared_task(bind=True, max_retries=3, default_retry_delay=15, queue='statistics_q')
 def calculate_hourly_statistics(self, target_hour: str = None):
     """
     每小時統計任務
@@ -77,7 +75,7 @@ def calculate_hourly_statistics(self, target_hour: str = None):
         logger.info(f"Starting hourly statistics calculation for {target_datetime}")
 
         # 調用服務層處理業務邏輯
-        result = HourlyStatisticsService.create_hourly_statistics(target_datetime)
+        result = HourlyStatisticsService.collect_hourly_statistics(target_datetime)
 
         if result['success']:
             logger.info(
@@ -96,8 +94,7 @@ def calculate_hourly_statistics(self, target_hour: str = None):
         raise
 
 
-@shared_task(bind=True, queue='statistics_q')
-@celery_retry(max_retries=3, countdown=60)
+@shared_task(bind=True, max_retries=3, default_retry_delay=60, queue='statistics_q')
 def calculate_daily_statistics(self, target_date: str = None):
     """
     每日統計任務
@@ -134,7 +131,7 @@ def calculate_daily_statistics(self, target_date: str = None):
             raise Exception(error_msg)  # 拋出異常觸發重試
 
         # 調用服務層處理業務邏輯
-        result = DailyStatisticsService.create_daily_statistics(date)
+        result = DailyStatisticsService.collect_daily_statistics(date)
 
         if result['success']:
             logger.info(

@@ -14,7 +14,7 @@ class APISuccessResponse(Response):
         status_code: int = status.HTTP_200_OK,
         **kwargs,
     ):
-        payload = {'code': code, 'msg': msg, 'data': data or {}}
+        payload = {'code': code, 'msg': msg, 'data': data if data is not None else {}}
 
         super().__init__(data=payload, status=status_code)
 

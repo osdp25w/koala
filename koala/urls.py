@@ -31,6 +31,8 @@ urlpatterns = [
         'api/statistic/',
         include(('statistic.urls', 'statistic'), namespace='statistic'),
     ),
+    path('api/bike/', include(('bike.urls', 'bike'), namespace='bike')),
+    path('api/rental/', include(('rental.urls', 'rental'), namespace='rental')),
     # path('api/provider/', include(('provider.urls', 'provider'), namespace='provider')),
 ]
 
