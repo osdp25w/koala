@@ -1,6 +1,7 @@
 from django.contrib.auth.hashers import make_password
 from django.contrib.auth.models import User
 from django.db import transaction
+from phonenumber_field.serializerfields import PhoneNumberField
 from rest_framework import serializers
 
 from account.models import Member
@@ -92,6 +93,15 @@ class MemberUpdateSerializer(MemberBaseSerializer):
             raise serializers.ValidationError('Username already exists')
         return value
 
+    def validate_phone(self, value):
+        if not value:
+            return value
+        if self.instance and self.instance.phone == value:
+            return value
+        if Member.objects.filter(phone=value).exists():
+            raise serializers.ValidationError('此電話號碼已被使用')
+        return value
+
 
 class MemberRegistrationSerializer(
     EncryptionSerializerMixin, serializers.ModelSerializer
@@ -116,7 +126,7 @@ class MemberRegistrationSerializer(
             'full_name': {'required': True},
             'phone': {'required': False},
             'national_id': {'required': False},
-            'type': {'required': False, 'default': Member.TYPE_TOURIST},
+            'type': {'required': False, 'default': Member.TypeOptions.TOURIST},
         }
 
     def validate_email(self, value):
@@ -127,6 +137,13 @@ class MemberRegistrationSerializer(
     def validate_username(self, value):
         if Member.objects.filter(username=value).exists():
             raise serializers.ValidationError('此用戶名已被使用')
+        return value
+
+    def validate_phone(self, value):
+        if not value:
+            return value
+        if Member.objects.filter(phone=value).exists():
+            raise serializers.ValidationError('此電話號碼已被使用')
         return value
 
     def create(self, validated_data):
@@ -143,7 +160,9 @@ class MemberRegistrationSerializer(
             # 設定 Member 的關聯資料
             validated_data['user'] = user
             validated_data['username'] = user.username
-            validated_data['type'] = validated_data.get('type', Member.TYPE_TOURIST)
+            validated_data['type'] = validated_data.get(
+                'type', Member.TypeOptions.TOURIST
+            )
 
             member = Member.objects.create(**validated_data)
 

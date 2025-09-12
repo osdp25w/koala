@@ -7,17 +7,12 @@ from bike.models import BikeInfo
 
 
 class BikeRental(models.Model):
-    RENTAL_STATUS_RESERVED = 'reserved'
-    RENTAL_STATUS_ACTIVE = 'active'
-    RENTAL_STATUS_COMPLETED = 'completed'
-    RENTAL_STATUS_CANCELLED = 'cancelled'
+    class RentalStatusOptions(models.TextChoices):
+        RESERVED = ('reserved', 'Reserved')
+        ACTIVE = ('active', 'Active')
+        COMPLETED = ('completed', 'Completed')
+        CANCELLED = ('cancelled', 'Cancelled')
 
-    RENTAL_STATUS_OPTIONS = [
-        (RENTAL_STATUS_RESERVED, 'Reserved'),
-        (RENTAL_STATUS_ACTIVE, 'Active'),
-        (RENTAL_STATUS_COMPLETED, 'Completed'),
-        (RENTAL_STATUS_CANCELLED, 'Cancelled'),
-    ]
     member = models.ForeignKey(
         Member, on_delete=models.CASCADE, related_name='bike_rentals'
     )
@@ -26,8 +21,8 @@ class BikeRental(models.Model):
     end_time = models.DateTimeField(null=True, blank=True)
     rental_status = models.CharField(
         max_length=20,
-        choices=RENTAL_STATUS_OPTIONS,
-        default=RENTAL_STATUS_ACTIVE,
+        choices=RentalStatusOptions.choices,
+        default=RentalStatusOptions.ACTIVE,
     )
 
     pickup_location = models.CharField(max_length=200, blank=True, default='')

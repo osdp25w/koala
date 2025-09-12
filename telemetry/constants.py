@@ -114,7 +114,7 @@ class IoTConstants:
     REALTIME_STATUS_MAPPING = {
         'LA': 'latitude',
         'LG': 'longitude',
-        'SO': 'battery_level',
+        'SO': 'soc',
         'IN': 'acc_status',
         'VS': 'vehicle_speed',
     }

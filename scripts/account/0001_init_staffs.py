@@ -11,19 +11,19 @@ class CustomScript(BaseScript):
         staffs_d = {
             'pony@staff1.com': {
                 'username': 'pony_staff1',
-                'type': Staff.TYPE_STAFF,
+                'type': Staff.TypeOptions.STAFF,
             },
             'pony@staff2.com': {
                 'username': 'pony_staff2',
-                'type': Staff.TYPE_STAFF,
+                'type': Staff.TypeOptions.STAFF,
             },
             'pony@admin1.com': {
                 'username': 'pony_admin1',
-                'type': Staff.TYPE_ADMIN,
+                'type': Staff.TypeOptions.ADMIN,
             },
             'pony@admin2.com': {
                 'username': 'pony_admin2',
-                'type': Staff.TYPE_ADMIN,
+                'type': Staff.TypeOptions.ADMIN,
             },
         }
 

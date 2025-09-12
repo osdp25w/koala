@@ -37,7 +37,6 @@ CORS_ALLOWED_ORIGINS = (
     'http://localhost:8081',
     'http://localhost:8080',
     'https://penguin.osdp25w.xyz',
-    'http://penguin.penguin.svc.cluster.local',
 )
 
 CORS_ALLOWED_ORIGIN_REGEXES = ()
@@ -51,6 +50,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'django.contrib.postgres',
+    # 'django.contrib.gis',
 ]
 
 START_APPS = [
@@ -71,6 +71,7 @@ THIRD_PARTY_APPS = [
     'django_celery_beat',
     'psqlextra',
     'import_export',
+    'phonenumber_field',
 ]
 
 INSTALLED_APPS += THIRD_PARTY_APPS

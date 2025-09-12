@@ -45,7 +45,7 @@ class BikeSimulator:
         self.lng = int(base_lng * 1000000)  # 經度 * 10^6
 
         # 腳踏車狀態
-        self.battery_level = random.randint(60, 100)  # SOC 百分比
+        self.soc = random.randint(60, 100)  # SOC 百分比
         self.battery_voltage = random.randint(115, 130)  # 電池電壓 * 10 (11.5V-13.0V)
         self.speed = 0  # 當前速度 km/hr
         self.heading_direction = random.randint(0, 365)  # 方向角度
@@ -131,7 +131,7 @@ class BikeSimulator:
 
             # 電池消耗
             if random.random() < 0.02:  # 2% 機率
-                self.battery_level = max(0, self.battery_level - 1)
+                self.soc = max(0, self.soc - 1)
                 self.battery_voltage = max(100, self.battery_voltage - 1)
         else:
             self.speed = 0
@@ -184,7 +184,7 @@ class BikeSimulator:
                 'SA': self.satellites_count,  # 衛星數量
                 # 電池與動力資訊
                 'MV': self.battery_voltage,  # 電池電壓 * 10
-                'SO': self.battery_level,  # 電量百分比
+                'SO': self.soc,  # 電量百分比
                 'EO': self.bike_odometer,  # 車輛里程 公尺
                 'AL': self.assist_level,  # 助力等級 0-4
                 'PT': self.pedal_torque,  # 踏板扭力 * 100
@@ -210,7 +210,7 @@ class BikeSimulator:
         success = publish_bike_telemetry(self.bike_id, iot_data)
         if success:
             print(
-                f"📡 {self.bike_id} (IMEI:{self.device_imei}) 遙測資料已發送 (電池: {self.battery_level}%, 速度: {self.speed}km/h, SQ: {self.sequence_number})"
+                f"📡 {self.bike_id} (IMEI:{self.device_imei}) 遙測資料已發送 (電池: {self.soc}%, 速度: {self.speed}km/h, SQ: {self.sequence_number})"
             )
         return success
 
@@ -243,7 +243,7 @@ class BikeSimulator:
                 'VP': self.gps_vdop,
                 'SA': self.satellites_count,
                 'MV': self.battery_voltage,
-                'SO': self.battery_level,
+                'SO': self.soc,
                 'EO': self.bike_odometer,
                 'AL': self.assist_level,
                 'PT': self.pedal_torque,
@@ -273,8 +273,8 @@ class BikeSimulator:
 
     def simulate_battery_warning(self):
         """模擬電池低電量警告"""
-        if self.battery_level < 20:
-            return self.send_error_report(1001, f"Low battery: {self.battery_level}%")
+        if self.soc < 20:
+            return self.send_error_report(1001, f"Low battery: {self.soc}%")
         return False
 
     def simulate_temperature_warning(self):
@@ -312,8 +312,8 @@ class BikeSimulator:
                 if self.controller_temp != 2000
                 else self.controller_temp
             )
-            if self.battery_level < 50:  # 如果電量太低，有機會恢復
-                self.battery_level = random.randint(50, 100)
+            if self.soc < 50:  # 如果電量太低，有機會恢復
+                self.soc = random.randint(50, 100)
 
         # 1. GPS訊號異常 (SA < 4) - 觸發不同嚴重程度
         if random.random() < 0.08:  # 8% 機率
@@ -355,14 +355,14 @@ class BikeSimulator:
             severity = random.choice(['warning', 'critical', 'edge'])
 
             if severity == 'warning':
-                self.battery_level = random.randint(10, 19)  # 警告範圍
-                print(f"🔋 {self.bike_id} 模擬電池電量警告 ({self.battery_level}%)")
+                self.soc = random.randint(10, 19)  # 警告範圍
+                print(f"🔋 {self.bike_id} 模擬電池電量警告 ({self.soc}%)")
             elif severity == 'critical':
-                self.battery_level = random.randint(1, 9)  # 嚴重範圍
-                print(f"⚡ {self.bike_id} 模擬電池電量嚴重 ({self.battery_level}%)")
+                self.soc = random.randint(1, 9)  # 嚴重範圍
+                print(f"⚡ {self.bike_id} 模擬電池電量嚴重 ({self.soc}%)")
             else:  # edge cases
-                self.battery_level = random.choice([20, 10])  # 邊界值測試
-                print(f"🔋 {self.bike_id} 模擬電池電量邊界測試 ({self.battery_level}%)")
+                self.soc = random.choice([20, 10])  # 邊界值測試
+                print(f"🔋 {self.bike_id} 模擬電池電量邊界測試 ({self.soc}%)")
             error_triggered = True
 
         # 4. RSSI訊號異常 (GQ < 4) - 不同強度的訊號問題
@@ -531,7 +531,7 @@ class IoTDeviceSimulator:
 
                 if cycle_count % 3 == 2:  # 電池問題
                     if random.random() < 0.5:
-                        bike.battery_level = random.randint(5, 15)
+                        bike.soc = random.randint(5, 15)
                     else:
                         bike.battery_temp1 = random.randint(55, 65)
 
@@ -634,9 +634,7 @@ class IoTDeviceSimulator:
             else '  - 沒有車輛資料'
         )
         print(f"  - 使用的真實車輛: {[bike.bike_id for bike in self.bikes]}")
-        print(
-            f"  - 最終電池狀態: {[f'{bike.bike_id}:{bike.battery_level}%' for bike in self.bikes]}"
-        )
+        print(f"  - 最終電池狀態: {[f'{bike.bike_id}:{bike.soc}%' for bike in self.bikes]}")
 
         # 斷開MQTT連接
         mqtt_client.disconnect()

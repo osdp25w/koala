@@ -40,7 +40,7 @@ def test_telemetry_message():
     telemetry_data = {
         'latitude': 25.0330,
         'longitude': 121.5654,
-        'battery_level': 85,
+        'soc': 85,
         'speed': 15.5,
         'temperature': 25,
         'voltage': 12.5,

@@ -31,11 +31,11 @@ class RBACViewSetMixin:
 
     # HTTP method 到 RBACPermission action 的映射
     ACTION_MAPPING = {
-        HTTPMethod.GET: RBACPermission.ACTION_GET,
-        HTTPMethod.POST: RBACPermission.ACTION_CREATE,
-        HTTPMethod.PUT: RBACPermission.ACTION_UPDATE,
-        HTTPMethod.PATCH: RBACPermission.ACTION_UPDATE,
-        HTTPMethod.DELETE: RBACPermission.ACTION_DELETE,
+        HTTPMethod.GET: RBACPermission.ActionOptions.GET,
+        HTTPMethod.POST: RBACPermission.ActionOptions.CREATE,
+        HTTPMethod.PUT: RBACPermission.ActionOptions.UPDATE,
+        HTTPMethod.PATCH: RBACPermission.ActionOptions.UPDATE,
+        HTTPMethod.DELETE: RBACPermission.ActionOptions.DELETE,
     }
 
     def get_rbac_model_class(self):
@@ -47,7 +47,7 @@ class RBACViewSetMixin:
     def get_rbac_action(self) -> str:
         """根據 HTTP method 獲取對應的 RBACPermission action"""
         method = self.request.method
-        return self.ACTION_MAPPING.get(method, RBACPermission.ACTION_GET)
+        return self.ACTION_MAPPING.get(method, RBACPermission.ActionOptions.GET)
 
     def check_rbac_permission(self) -> bool:
         """檢查 RBAC 權限"""

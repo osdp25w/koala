@@ -430,7 +430,7 @@ class BikeErrorLogService:
                     format_params[field] = triggered_value
                 case 'temp':
                     format_params[field] = triggered_value
-                case 'battery_level':
+                case 'soc':
                     format_params[field] = triggered_value
                 case 'distance':
                     if extra_info:
@@ -496,7 +496,8 @@ class BikeRealtimeStatusTelemetrySyncer:
         status_data = {
             'latitude': record.latitude,
             'longitude': record.longitude,
-            'battery_level': record.soc,
+            'soc': record.soc,
+            'vehicle_speed': record.vehicle_speed,
             'last_seen': timezone.now(),
         }
 
@@ -548,21 +549,20 @@ class BikeRealtimeStatusTelemetrySyncer:
                 has_error = IoTRawValidationService.has_telemetry_error(record)
 
                 if has_error:
-                    # 設定錯誤狀態，保存原始狀態
-                    if bike_realtime_status.status != BikeRealtimeStatus.STATUS_ERROR:
-                        bike_realtime_status.orig_status = bike_realtime_status.status
-                    bike_realtime_status.status = BikeRealtimeStatus.STATUS_ERROR
+                    bike_realtime_status.status = BikeRealtimeStatus.StatusOptions.ERROR
                 else:
-                    # 如果之前是錯誤狀態，現在沒有錯誤了，恢復原始狀態
-                    if bike_realtime_status.status == BikeRealtimeStatus.STATUS_ERROR:
+                    if (
+                        bike_realtime_status.status
+                        == BikeRealtimeStatus.StatusOptions.ERROR
+                    ):
                         if bike_realtime_status.orig_status:
                             bike_realtime_status.status = (
                                 bike_realtime_status.orig_status
                             )
-                            bike_realtime_status.orig_status = None
                         else:
-                            # 沒有原始狀態，預設恢復為 idle
-                            bike_realtime_status.status = BikeRealtimeStatus.STATUS_IDLE
+                            bike_realtime_status.status = (
+                                BikeRealtimeStatus.StatusOptions.IDLE
+                            )
 
                 statuses_to_update.append(bike_realtime_status)
                 logger.debug(f"Prepared update for bike {record.bike_id}")
@@ -571,20 +571,10 @@ class BikeRealtimeStatusTelemetrySyncer:
                 logger.error(f"Error preparing update for bike {record.bike_id}: {e}")
                 continue
 
-        # 批量更新
         if statuses_to_update:
-            BikeRealtimeStatus.objects.bulk_update(
-                statuses_to_update,
-                [
-                    'latitude',
-                    'longitude',
-                    'battery_level',
-                    'last_seen',
-                    'status',
-                    'orig_status',
-                ],
-            )
-            logger.info(f"Bulk updated {len(statuses_to_update)} bike statuses")
+            for bike_status in statuses_to_update:
+                bike_status.save()  # TODO: fix n+1 problem
+            logger.info(f"Updated {len(statuses_to_update)} bike statuses")
 
         return len(statuses_to_update)
 
