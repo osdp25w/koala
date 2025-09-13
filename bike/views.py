@@ -8,9 +8,18 @@ from rest_framework.permissions import IsAuthenticated
 
 from account.models import Member, Staff
 from account.simple_permissions import IsAdmin, IsStaff
-from bike.models import BikeCategory, BikeInfo, BikeRealtimeStatus, BikeSeries
+from bike.filters import BikeErrorLogStatusFilter
+from bike.models import (
+    BikeCategory,
+    BikeErrorLogStatus,
+    BikeInfo,
+    BikeRealtimeStatus,
+    BikeSeries,
+)
 from bike.serializers import (
     BikeCategorySerializer,
+    BikeErrorLogStatusSerializer,
+    BikeErrorLogStatusUpdateSerializer,
     BikeInfoCreateSerializer,
     BikeInfoSerializer,
     BikeInfoUpdateSerializer,
@@ -94,6 +103,53 @@ class BikeRealtimeStatusViewSet(
             )
 
         return base_queryset.none()
+
+
+class BikeErrorLogStatusViewSet(
+    mixins.ListModelMixin,
+    mixins.UpdateModelMixin,
+    BaseGenericViewSet,
+):
+    permission_classes = [IsStaff | IsAdmin]
+    filter_backends = [DjangoFilterBackend, OrderingFilter]
+    filterset_class = BikeErrorLogStatusFilter
+    ordering = ['-error_log__created_at']
+    pagination_class = LimitOffsetPagination
+
+    def get_queryset(self):
+        user = self.request.user
+        queryset = BikeErrorLogStatus.objects.filter(staff=user.profile).select_related(
+            'error_log',
+            'error_log__bike',
+            'error_log__bike__series',
+            'error_log__bike__series__category',
+            'error_log__telemetry_device',
+        )
+
+        is_expand_telemetry_record = (
+            self.request.query_params.get('expand_telemetry_record', 'false').lower()
+            == 'true'
+        )
+
+        if is_expand_telemetry_record:
+            queryset = queryset.prefetch_related('error_log__telemetry_record')
+
+        return queryset
+
+    def get_serializer_class(self):
+        match self.action:
+            case ViewSetAction.UPDATE | ViewSetAction.PARTIAL_UPDATE:
+                return BikeErrorLogStatusUpdateSerializer
+            case _:
+                return BikeErrorLogStatusSerializer
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context['expand_telemetry_record'] = (
+            self.request.query_params.get('expand_telemetry_record', 'false').lower()
+            == 'true'
+        )
+        return context
 
 
 @api_view(['GET'])

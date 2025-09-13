@@ -23,7 +23,7 @@ def sync_bike_realtime_status():
     try:
         # 使用統一的車輛即時狀態遙測同步器
         result = BikeRealtimeStatusTelemetrySyncer.sync_from_recent_telemetry(
-            time_window_minutes=5
+            time_window_minutes=1
         )
 
         if result['success']:
@@ -50,21 +50,16 @@ def handle_bike_error_log(error_data: dict):
             'title': str,
             'detail': str,
             'telemetry_device_imei': str (optional),  # 設備 IMEI
-            'telemetry_record_snapshot': dict (optional),
-            'extra_context': dict (optional),
+            'telemetry_record_id': int (optional),  # TelemetryRecord ID
         }
     """
     try:
         from account.models import Staff
-        from bike.models import BikeErrorLog, BikeErrorLogStatus, BikeInfo
-        from telemetry.models import TelemetryDevice
-
-        # 獲取車輛信息
-        bike = BikeInfo.objects.get(bike_id=error_data['bike_id'])
+        from bike.models import BikeErrorLog, BikeErrorLogStatus
 
         # 準備創建參數
         create_params = {
-            'bike': bike,
+            'bike_id': error_data['bike_id'],
             'code': error_data['code'],
             'level': error_data['level'],
             'title': error_data['title'],
@@ -73,23 +68,10 @@ def handle_bike_error_log(error_data: dict):
 
         # 處理可選字段
         if error_data.get('telemetry_device_imei'):
-            try:
-                create_params['telemetry_device'] = TelemetryDevice.objects.get(
-                    IMEI=error_data['telemetry_device_imei']
-                )
-            except TelemetryDevice.DoesNotExist:
-                logger.warning(
-                    f"TelemetryDevice not found with IMEI: {error_data['telemetry_device_imei']}"
-                )
-                # 繼續處理，但不關聯設備
+            create_params['telemetry_device_id'] = error_data['telemetry_device_imei']
 
-        if error_data.get('telemetry_record_snapshot'):
-            create_params['telemetry_record_snapshot'] = error_data[
-                'telemetry_record_snapshot'
-            ]
-
-        if error_data.get('extra_context'):
-            create_params['extra_context'] = error_data['extra_context']
+        if error_data.get('telemetry_record_id'):
+            create_params['telemetry_record_id'] = error_data['telemetry_record_id']
 
         # 創建錯誤日誌
         bike_error_log = BikeErrorLog.objects.create(**create_params)
@@ -111,8 +93,6 @@ def handle_bike_error_log(error_data: dict):
             f"Created bike error log {bike_error_log.id} with {len(read_statuses)} read statuses"
         )
 
-    except BikeInfo.DoesNotExist:
-        logger.error(f"Bike not found: {error_data.get('bike_id')}")
     except Exception as e:
         logger.error(f"Failed to handle bike error log: {e}")
         raise

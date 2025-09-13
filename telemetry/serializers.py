@@ -2,7 +2,7 @@ from rest_framework import serializers
 
 from bike.serializers import BikeInfoSerializer
 from telemetry.constants import IoTConstants
-from telemetry.models import TelemetryDevice
+from telemetry.models import TelemetryDevice, TelemetryRecord
 
 
 class TelemetryDeviceBaseSerializer(serializers.ModelSerializer):
@@ -88,3 +88,9 @@ class TelemetryDeviceUpdateSerializer(TelemetryDeviceBaseSerializer):
                     )
 
         return value
+
+
+class TelemetryRecordSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TelemetryRecord
+        fields = '__all__'

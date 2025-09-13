@@ -3,6 +3,7 @@ from rest_framework.routers import DefaultRouter
 
 from bike.views import (
     BikeCategoryViewSet,
+    BikeErrorLogStatusViewSet,
     BikeInfoViewSet,
     BikeRealtimeStatusViewSet,
     BikeSeriesViewSet,
@@ -17,6 +18,9 @@ router.register(r'series', BikeSeriesViewSet, basename='series')
 router.register(r'bikes', BikeInfoViewSet, basename='bikes')
 router.register(
     r'realtime-status', BikeRealtimeStatusViewSet, basename='realtime-status'
+)
+router.register(
+    r'error-log-status', BikeErrorLogStatusViewSet, basename='error-log-status'
 )
 
 urlpatterns = [

@@ -1,0 +1,44 @@
+[
+    {
+        "model": "bike.bikeerrorlog",
+        "pk": 1,
+        "fields": {
+            "code": "battery_level:warning",
+            "bike": "TEST001",
+            "level": "warning",
+            "title": "電池電量不足",
+            "detail": "車輛 TEST001 電池電量偏低 (15%)，建議儘快充電",
+            "telemetry_device": "345678901234567",
+            "telemetry_record": null,
+            "created_at": "2024-01-01T10:00:00Z"
+        }
+    },
+    {
+        "model": "bike.bikeerrorlog",
+        "pk": 2,
+        "fields": {
+            "code": "battery_temp:critical",
+            "bike": "TEST001",
+            "level": "critical",
+            "title": "電池溫度危險",
+            "detail": "車輛 TEST001 電池溫度達危險等級 (62°C)，請立即停止使用",
+            "telemetry_device": "345678901234567",
+            "telemetry_record": null,
+            "created_at": "2024-01-01T11:00:00Z"
+        }
+    },
+    {
+        "model": "bike.bikeerrorlog",
+        "pk": 3,
+        "fields": {
+            "code": "gps_signal:info",
+            "bike": "TEST002",
+            "level": "info",
+            "title": "GPS訊號異常",
+            "detail": "車輛 TEST002 GPS衛星數量過少 (2 顆)，可能影響定位準確度",
+            "telemetry_device": null,
+            "telemetry_record": null,
+            "created_at": "2024-01-01T12:00:00Z"
+        }
+    }
+]

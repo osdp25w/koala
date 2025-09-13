@@ -1,0 +1,62 @@
+[
+    {
+        "model": "bike.bikeerrorlogstatus",
+        "pk": 1,
+        "fields": {
+            "error_log": 1,
+            "staff": 1,
+            "is_read": false,
+            "read_at": null
+        }
+    },
+    {
+        "model": "bike.bikeerrorlogstatus",
+        "pk": 2,
+        "fields": {
+            "error_log": 1,
+            "staff": 2,
+            "is_read": false,
+            "read_at": null
+        }
+    },
+    {
+        "model": "bike.bikeerrorlogstatus",
+        "pk": 3,
+        "fields": {
+            "error_log": 2,
+            "staff": 1,
+            "is_read": true,
+            "read_at": "2024-01-01T11:30:00Z"
+        }
+    },
+    {
+        "model": "bike.bikeerrorlogstatus",
+        "pk": 4,
+        "fields": {
+            "error_log": 2,
+            "staff": 2,
+            "is_read": false,
+            "read_at": null
+        }
+    },
+    {
+        "model": "bike.bikeerrorlogstatus",
+        "pk": 5,
+        "fields": {
+            "error_log": 3,
+            "staff": 1,
+            "is_read": false,
+            "read_at": null
+        }
+    },
+    {
+        "model": "bike.bikeerrorlogstatus",
+        "pk": 6,
+        "fields": {
+            "error_log": 3,
+            "staff": 2,
+            "is_read": false,
+            "read_at": null
+        }
+    }
+]

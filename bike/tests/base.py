@@ -26,6 +26,8 @@ class BaseBikeTestWithFixtures(TestCase):
         f'{FIXTURE_DIR}/bike_series.json',
         f'{FIXTURE_DIR}/bike_info.json',
         f'{FIXTURE_DIR}/bike_realtime_status.json',
+        f'{FIXTURE_DIR}/bike_error_log.json',
+        f'{FIXTURE_DIR}/bike_error_log_status.json',
     ]
 
     def setUp(self):
@@ -56,10 +58,10 @@ class BaseBikeTestWithFixtures(TestCase):
                 user=self.member_user1, username='member1'
             )
             self.staff1 = Staff.objects.create(
-                user=self.staff_user1, username='staff1', is_admin=False
+                user=self.staff_user1, username='staff1', type=Staff.TypeOptions.STAFF
             )
             self.admin1 = Staff.objects.create(
-                user=self.admin_user1, username='admin1', is_admin=True
+                user=self.admin_user1, username='admin1', type=Staff.TypeOptions.ADMIN
             )
 
         # Load test data from fixtures
@@ -91,10 +93,10 @@ class BaseBikeAPITest(APITestCase):
             user=self.member_user, username='member'
         )
         self.staff_profile = Staff.objects.create(
-            user=self.staff_user, username='staff', is_admin=False
+            user=self.staff_user, username='staff', type=Staff.TypeOptions.STAFF
         )
         self.admin_profile = Staff.objects.create(
-            user=self.admin_user, username='admin', is_admin=True
+            user=self.admin_user, username='admin', type=Staff.TypeOptions.ADMIN
         )
 
     def authenticate_as(self, profile):

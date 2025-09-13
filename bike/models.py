@@ -189,8 +189,13 @@ class BikeErrorLog(models.Model):
         blank=True,
         related_name='bike_error_logs',
     )
-    telemetry_record_snapshot = models.JSONField(null=True, blank=True)
-    extra_context = models.JSONField(null=True, blank=True)
+    telemetry_record = models.ForeignKey(
+        'telemetry.TelemetryRecord',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='error_logs',
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -200,6 +205,7 @@ class BikeErrorLog(models.Model):
             models.Index(fields=['created_at']),
             models.Index(fields=['level']),
             models.Index(fields=['telemetry_device']),
+            models.Index(fields=['telemetry_record']),
         ]
         ordering = ['-created_at']
 
