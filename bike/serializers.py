@@ -1,14 +1,121 @@
 from rest_framework import serializers
 
 from account.models import Member
+from bike.services import BikeManagementService
 
-from .models import BikeInfo, BikeRealtimeStatus
+from .models import BikeCategory, BikeInfo, BikeRealtimeStatus, BikeSeries
+
+
+class BikeCategorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BikeCategory
+        fields = ['id', 'category_name', 'description', 'created_at', 'updated_at']
+
+
+class BikeSeriesSerializer(serializers.ModelSerializer):
+    category = BikeCategorySerializer(read_only=True)
+
+    class Meta:
+        model = BikeSeries
+        fields = [
+            'id',
+            'category',
+            'series_name',
+            'description',
+            'created_at',
+            'updated_at',
+        ]
 
 
 class BikeInfoSerializer(serializers.ModelSerializer):
+    telemetry_device_imei = serializers.CharField(
+        source='telemetry_device.IMEI', read_only=True
+    )
+    series_id = serializers.IntegerField(source='series.id', read_only=True)
+    category_id = serializers.IntegerField(source='series.category.id', read_only=True)
+
     class Meta:
         model = BikeInfo
-        fields = ['bike_id', 'bike_name', 'bike_model']
+        fields = [
+            'bike_id',
+            'bike_name',
+            'bike_model',
+            'series_id',
+            'category_id',
+            'telemetry_device_imei',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = ['created_at', 'updated_at']
+
+
+class BikeInfoCreateSerializer(serializers.ModelSerializer):
+    telemetry_device_imei = serializers.CharField(
+        write_only=True, required=False, allow_null=True
+    )
+
+    class Meta:
+        model = BikeInfo
+        fields = [
+            'bike_id',
+            'bike_name',
+            'bike_model',
+            'series',
+            'telemetry_device_imei',
+        ]
+
+    def to_representation(self, instance):
+        return BikeInfoSerializer(instance).data
+
+    def validate_telemetry_device_imei(self, value):
+        if value:
+            BikeManagementService.validate_telemetry_device(value)
+        return value
+
+    def create(self, validated_data):
+        imei = validated_data.pop('telemetry_device_imei', None)
+        bike = super().create(validated_data)
+
+        if imei:
+            BikeManagementService.assign_device_to_bike(bike, imei)
+
+        return bike
+
+
+class BikeInfoUpdateSerializer(serializers.ModelSerializer):
+    telemetry_device_imei = serializers.CharField(
+        write_only=True, required=False, allow_null=True
+    )
+
+    class Meta:
+        model = BikeInfo
+        fields = ['bike_name', 'bike_model', 'series', 'telemetry_device_imei']
+
+    def to_representation(self, instance):
+        return BikeInfoSerializer(instance).data
+
+    def validate(self, attrs):
+        # 檢查腳踏車狀態，只有非 RENTED 狀態才能修改
+        if self.instance:
+            BikeManagementService.validate_bike_modification(self.instance)
+        return attrs
+
+    def validate_telemetry_device_imei(self, value):
+        if value:
+            BikeManagementService.validate_telemetry_device(value, self.instance)
+        return value
+
+    def update(self, instance, validated_data):
+        imei = validated_data.pop('telemetry_device_imei', None)
+
+        # 先更新其他欄位
+        instance = super().update(instance, validated_data)
+
+        # 處理 telemetry_device 更新
+        if 'telemetry_device_imei' in self.initial_data:  # 確認前端有傳這個欄位
+            BikeManagementService.update_bike_telemetry_device(instance, imei)
+
+        return instance
 
 
 class MemberSimpleSerializer(serializers.ModelSerializer):

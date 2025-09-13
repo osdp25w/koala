@@ -12,7 +12,9 @@ from telemetry.models import TelemetryDevice, TelemetryRecord
 class CustomScript(BaseScript):
     def run(self):
         # 獲取前3個設備和對應的車輛
-        devices = TelemetryDevice.objects.filter(is_active=True)[:3]
+        devices = TelemetryDevice.objects.filter(
+            status=TelemetryDevice.StatusOptions.DEPLOYED
+        )[:3]
         members = list(Member.objects.filter(is_active=True))
 
         if not devices.exists():

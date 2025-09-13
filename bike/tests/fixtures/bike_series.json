@@ -1,0 +1,35 @@
+[
+    {
+        "model": "bike.bikeseries",
+        "pk": 1,
+        "fields": {
+            "category": 1,
+            "series_name": "Urban Pro",
+            "description": "Professional urban commuting bikes",
+            "created_at": "2024-01-01T00:00:00Z",
+            "updated_at": "2024-01-01T00:00:00Z"
+        }
+    },
+    {
+        "model": "bike.bikeseries",
+        "pk": 2,
+        "fields": {
+            "category": 1,
+            "series_name": "Compact Fold",
+            "description": "Compact folding bikes for storage convenience",
+            "created_at": "2024-01-01T00:00:00Z",
+            "updated_at": "2024-01-01T00:00:00Z"
+        }
+    },
+    {
+        "model": "bike.bikeseries",
+        "pk": 3,
+        "fields": {
+            "category": 2,
+            "series_name": "Trail Master",
+            "description": "High-performance mountain bikes",
+            "created_at": "2024-01-01T00:00:00Z",
+            "updated_at": "2024-01-01T00:00:00Z"
+        }
+    }
+]

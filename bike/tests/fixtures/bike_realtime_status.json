@@ -1,0 +1,47 @@
+[
+    {
+        "model": "bike.bikerealtimestatus",
+        "fields": {
+            "bike": "TEST001",
+            "latitude": 25033000,
+            "longitude": 121565400,
+            "soc": 85,
+            "vehicle_speed": 0,
+            "status": "idle",
+            "orig_status": null,
+            "current_member": null,
+            "last_seen": "2024-01-01T12:00:00Z",
+            "updated_at": "2024-01-01T12:00:00Z"
+        }
+    },
+    {
+        "model": "bike.bikerealtimestatus",
+        "fields": {
+            "bike": "TEST002",
+            "latitude": 25034000,
+            "longitude": 121566400,
+            "soc": 92,
+            "vehicle_speed": 0,
+            "status": "idle",
+            "orig_status": null,
+            "current_member": null,
+            "last_seen": "2024-01-01T12:00:00Z",
+            "updated_at": "2024-01-01T12:00:00Z"
+        }
+    },
+    {
+        "model": "bike.bikerealtimestatus",
+        "fields": {
+            "bike": "TEST003",
+            "latitude": 25032000,
+            "longitude": 121564400,
+            "soc": 78,
+            "vehicle_speed": 0,
+            "status": "idle",
+            "orig_status": null,
+            "current_member": null,
+            "last_seen": "2024-01-01T12:00:00Z",
+            "updated_at": "2024-01-01T12:00:00Z"
+        }
+    }
+]

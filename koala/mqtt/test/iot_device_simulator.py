@@ -490,7 +490,7 @@ class IoTDeviceSimulator:
         try:
             from bike.models import BikeInfo
 
-            available_bikes = list(BikeInfo.objects.filter(is_active=True))
+            available_bikes = list(BikeInfo.objects.all())
 
             if not available_bikes:
                 print('⚠️ 警告: 沒有找到腳踏車資料，請先執行 bike 腳本創建腳踏車')

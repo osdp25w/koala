@@ -18,11 +18,11 @@ class HourlyStatisticsService:
         """計算車輛在線/離線狀態統計"""
         try:
             online_count = BikeRealtimeStatus.objects.filter(
-                status__in=BikeRealtimeStatus.STATUS_ONLINE, bike__is_active=True
+                status__in=BikeRealtimeStatus.STATUS_ONLINE
             ).count()
 
             offline_count = BikeRealtimeStatus.objects.filter(
-                status__in=BikeRealtimeStatus.STATUS_OFFLINE, bike__is_active=True
+                status__in=BikeRealtimeStatus.STATUS_OFFLINE
             ).count()
 
             return {
