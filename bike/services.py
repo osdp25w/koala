@@ -182,7 +182,7 @@ class BikeErrorLogService:
             current_status: BikeRealtimeStatus 實例 (可選，用於位置異常檢查)
 
         Returns:
-            觸發的錯誤列表，每個錯誤包含錯誤類型和 telemetry_record_snapshot
+            觸發的錯誤列表，每個錯誤包含錯誤類型和 telemetry_record_id
         """
         triggered_errors = []
 
@@ -226,13 +226,71 @@ class BikeErrorLogService:
                     }
                     triggered_errors.append(error_data)
 
-        # 為每個錯誤添加 telemetry_record_snapshot
+        if triggered_errors:
+            triggered_errors = BikeErrorLogService.filter_errors_by_priority(
+                triggered_errors
+            )
+
+        # 為每個錯誤添加 telemetry_record_id
         for error_data in triggered_errors:
-            error_data[
-                'telemetry_record_snapshot'
-            ] = BikeErrorLogService._create_telemetry_record_snapshot(telemetry_record)
+            error_data['telemetry_record_id'] = telemetry_record.id
 
         return triggered_errors
+
+    @staticmethod
+    def filter_errors_by_priority(triggered_errors: list) -> list:
+        """
+        按優先級過濾錯誤 - 同一分組只保留最高優先級的錯誤
+
+        Args:
+            triggered_errors: 原始觸發的錯誤列表
+
+        Returns:
+            過濾後的錯誤列表
+        """
+        from bike.constants import BikeErrorLogConstants
+
+        # 按分組整理錯誤
+        grouped_errors = {}
+        independent_errors = []
+
+        for error_data in triggered_errors:
+            error_code = error_data['error_type']['code']
+            group = BikeErrorLogConstants.get_error_group_name(error_code)
+
+            if group:
+                # 有分組的錯誤
+                if group not in grouped_errors:
+                    grouped_errors[group] = []
+                grouped_errors[group].append(error_data)
+            else:
+                # 獨立錯誤，直接保留
+                independent_errors.append(error_data)
+                logger.warning(f"Error code '{error_code}' not found in any group")
+
+        # 對每個分組選擇最高優先級的錯誤
+        filtered_errors = independent_errors.copy()
+
+        for group_name, group_errors in grouped_errors.items():
+            priority_order = BikeErrorLogConstants.ERROR_PRIORITY_GROUPS[group_name][
+                'priority'
+            ]
+
+            # 按優先級排序，選擇第一個
+            for priority_code in priority_order:
+                for error_data in group_errors:
+                    if error_data['error_type']['code'] == priority_code:
+                        filtered_errors.append(error_data)
+                        logger.debug(
+                            f"Selected {priority_code} from group {group_name} "
+                            f"(filtered out {len(group_errors)-1} lower priority errors)"
+                        )
+                        break  # 找到最高優先級，跳出
+                else:
+                    continue  # 沒找到，檢查下一個優先級
+                break  # 已找到最高優先級，跳出外層循環
+
+        return filtered_errors
 
     @staticmethod
     def _handle_custom_expressions(
@@ -332,28 +390,6 @@ class BikeErrorLogService:
             return False, {}
 
     @staticmethod
-    def _create_telemetry_record_snapshot(record: TelemetryRecord) -> dict:
-        """
-        創建 TelemetryRecord 的快照數據
-
-        Args:
-            record: TelemetryRecord 實例
-
-        Returns:
-            TelemetryRecord 快照字典
-        """
-        snapshot = record.__dict__.copy()
-        # 移除 Django 內部欄位
-        snapshot.pop('_state', None)
-
-        # 處理 datetime 序列化
-        for key, value in snapshot.items():
-            if hasattr(value, 'isoformat'):
-                snapshot[key] = value.isoformat()
-
-        return snapshot
-
-    @staticmethod
     def is_duplicate_error(
         bike_id: str, error_code: str, window_minutes: int = 10
     ) -> bool:
@@ -376,13 +412,61 @@ class BikeErrorLogService:
                 # Cache 中存在，表示重複
                 return True
             else:
-                # Cache 中不存在，設置 cache 並返回非重複
-                cache.set(cache_key, True, timeout=window_minutes * 60)  # 轉換為秒
+                # Cache 中不存在，表示非重複
                 return False
 
         except Exception as e:
             logger.error(
                 f"Error checking duplicate error for {bike_id}, {error_code}: {e}"
+            )
+            # 如果 cache 出錯，回退到資料庫檢查
+            return BikeErrorLogService._fallback_database_duplicate_check(
+                bike_id, error_code, window_minutes
+            )
+
+    @staticmethod
+    def set_cascading_cooldown(bike_id: str, error_code: str, window_minutes: int = 10):
+        """
+        設置級聯冷卻 - 觸發嚴重錯誤時，同時冷卻同分組的較輕微錯誤
+
+        Args:
+            bike_id: 車輛ID
+            error_code: 觸發的錯誤代碼
+            window_minutes: 冷卻時間窗口
+        """
+        from bike.constants import BikeErrorLogConstants
+
+        try:
+            # 首先設置自己的冷卻
+            cache_key = f"bike_error_log:{bike_id}:{error_code}"
+            cache.set(cache_key, True, timeout=window_minutes * 60)
+
+            # 檢查是否需要級聯冷卻
+            group_name = BikeErrorLogConstants.get_error_group_name(error_code)
+            if group_name:
+                group_info = BikeErrorLogConstants.ERROR_PRIORITY_GROUPS[group_name]
+                priority_order = group_info['priority']
+
+                # 找到當前錯誤在優先級中的位置
+                try:
+                    current_priority_index = priority_order.index(error_code)
+                except ValueError:
+                    # 不在優先級列表中，不處理級聯
+                    return
+
+                # 對所有較低優先級的錯誤設置冷卻
+                for i in range(current_priority_index + 1, len(priority_order)):
+                    lower_priority_code = priority_order[i]
+                    lower_cache_key = f"bike_error_log:{bike_id}:{lower_priority_code}"
+                    cache.set(lower_cache_key, True, timeout=window_minutes * 60)
+
+                    logger.info(
+                        f"Cascading cooldown: {lower_priority_code} for bike {bike_id}"
+                    )
+
+        except Exception as e:
+            logger.error(
+                f"Error setting cascading cooldown for {bike_id}, {error_code}: {e}"
             )
             # 如果 cache 出錯，回退到資料庫檢查
             from bike.models import BikeErrorLog, BikeInfo
@@ -696,6 +780,11 @@ class BikeRealtimeStatusTelemetrySyncer:
                     if not BikeErrorLogService.is_duplicate_error(
                         record.bike_id, error_code
                     ):
+                        # 使用級聯冷卻機制設置冷卻
+                        BikeErrorLogService.set_cascading_cooldown(
+                            record.bike_id, error_code
+                        )
+
                         cls._queue_error_log_task(
                             error_data, record.telemetry_device_imei
                         )
@@ -744,13 +833,7 @@ class BikeRealtimeStatusTelemetrySyncer:
             'title': error_type['title'],
             'detail': detail,
             'telemetry_device_imei': device_imei,
-            'telemetry_record_snapshot': error_data['telemetry_record_snapshot'],
-            'extra_context': {
-                'triggered_field': error_data['triggered_field'],
-                'triggered_value': error_data['triggered_value'],
-                'triggered_values': error_data.get('triggered_values', {}),
-                'extra_info': error_data.get('extra_info', {}),
-            },
+            'telemetry_record_id': error_data['telemetry_record_id'],
         }
 
         # 發送異步任務

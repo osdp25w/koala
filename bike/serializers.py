@@ -1,9 +1,15 @@
 from rest_framework import serializers
 
 from account.models import Member
+from bike.models import (
+    BikeCategory,
+    BikeErrorLog,
+    BikeErrorLogStatus,
+    BikeInfo,
+    BikeRealtimeStatus,
+    BikeSeries,
+)
 from bike.services import BikeManagementService
-
-from .models import BikeCategory, BikeInfo, BikeRealtimeStatus, BikeSeries
 
 
 class BikeCategorySerializer(serializers.ModelSerializer):
@@ -145,3 +151,84 @@ class BikeRealtimeStatusSerializer(serializers.ModelSerializer):
             'last_seen',
             'updated_at',
         ]
+
+
+class BikeErrorLogSerializer(serializers.ModelSerializer):
+    bike = BikeInfoSerializer(read_only=True)
+    telemetry_device_imei = serializers.CharField(
+        source='telemetry_device.IMEI', read_only=True
+    )
+    level_display = serializers.CharField(source='get_level_display', read_only=True)
+    telemetry_record = serializers.SerializerMethodField()
+
+    class Meta:
+        model = BikeErrorLog
+        fields = [
+            'id',
+            'code',
+            'bike',
+            'level',
+            'level_display',
+            'title',
+            'detail',
+            'telemetry_device_imei',
+            'telemetry_record',
+            'created_at',
+        ]
+
+    def get_telemetry_record(self, obj):
+        """
+        根據 expand_telemetry_record 參數決定是否展開 telemetry_record
+        """
+        from telemetry.serializers import TelemetryRecordSerializer
+
+        if not obj.telemetry_record:
+            return None
+
+        is_expand = self.context.get('expand_telemetry_record', False)
+        if is_expand:
+            return TelemetryRecordSerializer(obj.telemetry_record).data
+        else:
+            return obj.telemetry_record.id
+
+
+class BikeErrorLogStatusSerializer(serializers.ModelSerializer):
+    error_log = BikeErrorLogSerializer(read_only=True)
+
+    class Meta:
+        model = BikeErrorLogStatus
+        fields = [
+            'id',
+            'error_log',
+            'is_read',
+            'read_at',
+        ]
+        read_only_fields = ['error_log']
+
+
+class BikeErrorLogStatusUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BikeErrorLogStatus
+        fields = ['is_read']
+
+    def to_representation(self, instance):
+        return BikeErrorLogStatusSerializer(instance).data
+
+    def validate_is_read(self, value):
+        if not value:
+            raise serializers.ValidationError('只能標記為已讀，不能標記為未讀')
+        return value
+
+    def update(self, instance, validated_data):
+        # 只允許標記為已讀，不允許取消已讀狀態
+        is_read = validated_data.get('is_read', False)
+
+        if is_read and not instance.is_read:
+            from django.utils import timezone
+
+            validated_data['read_at'] = timezone.now()
+        elif instance.is_read and not is_read:
+            # 已讀狀態不能被取消
+            raise serializers.ValidationError('不能取消已讀狀態')
+
+        return super().update(instance, validated_data)
