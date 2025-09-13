@@ -1,0 +1,32 @@
+[
+    {
+        "model": "bike.bikecategory",
+        "pk": 1,
+        "fields": {
+            "category_name": "Electric",
+            "description": "Electric bikes for eco-friendly transportation",
+            "created_at": "2024-01-01T00:00:00Z",
+            "updated_at": "2024-01-01T00:00:00Z"
+        }
+    },
+    {
+        "model": "bike.bikecategory",
+        "pk": 2,
+        "fields": {
+            "category_name": "Mountain",
+            "description": "Mountain bikes for off-road adventures",
+            "created_at": "2024-01-01T00:00:00Z",
+            "updated_at": "2024-01-01T00:00:00Z"
+        }
+    },
+    {
+        "model": "bike.bikecategory",
+        "pk": 3,
+        "fields": {
+            "category_name": "Urban",
+            "description": "Urban bikes for city commuting",
+            "created_at": "2024-01-01T00:00:00Z",
+            "updated_at": "2024-01-01T00:00:00Z"
+        }
+    }
+]

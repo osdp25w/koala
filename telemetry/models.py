@@ -4,16 +4,23 @@ from psqlextra.types import PostgresPartitioningMethod
 
 
 class TelemetryDevice(models.Model):
+    class StatusOptions(models.TextChoices):
+        AVAILABLE = ('available', 'Available')
+        DEPLOYED = ('deployed', 'Deployed')
+        MAINTENANCE = ('maintenance', 'Maintenance')
+
     IMEI = models.CharField(max_length=20, primary_key=True, verbose_name='設備ID (IMEI)')
     name = models.CharField(max_length=100)
     model = models.CharField(max_length=100)
-    is_active = models.BooleanField(default=True)
+    status = models.CharField(
+        max_length=20, choices=StatusOptions.choices, default=StatusOptions.AVAILABLE
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         indexes = [
-            models.Index(fields=['is_active']),
+            models.Index(fields=['status']),
             models.Index(fields=['model']),
         ]
         ordering = ['created_at']

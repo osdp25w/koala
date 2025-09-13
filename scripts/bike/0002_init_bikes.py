@@ -24,7 +24,11 @@ class CustomScript(BaseScript):
         compact_fold = BikeSeries.objects.get(series_name='Compact Fold')
 
         # 獲取可用的 TelemetryDevice (按順序分配)
-        available_devices = list(TelemetryDevice.objects.filter(is_active=True))
+        available_devices = list(
+            TelemetryDevice.objects.filter(
+                status=TelemetryDevice.StatusOptions.AVAILABLE
+            )
+        )
 
         bikes_data = [
             # Urban Pro 系列

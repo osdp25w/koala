@@ -1,15 +1,25 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
-from .views import BikeRealtimeStatusViewSet
+from bike.views import (
+    BikeCategoryViewSet,
+    BikeInfoViewSet,
+    BikeRealtimeStatusViewSet,
+    BikeSeriesViewSet,
+    bike_status_options_view,
+)
 
 app_name = 'bike'
 
 router = DefaultRouter()
+router.register(r'categories', BikeCategoryViewSet, basename='categories')
+router.register(r'series', BikeSeriesViewSet, basename='series')
+router.register(r'bikes', BikeInfoViewSet, basename='bikes')
 router.register(
     r'realtime-status', BikeRealtimeStatusViewSet, basename='realtime-status'
 )
 
 urlpatterns = [
     path('', include(router.urls)),
+    path('status-options/', bike_status_options_view, name='status-options'),
 ]

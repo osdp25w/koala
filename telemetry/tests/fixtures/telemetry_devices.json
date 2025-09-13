@@ -1,0 +1,46 @@
+[
+    {
+        "model": "telemetry.telemetrydevice",
+        "pk": "111111111111111",
+        "fields": {
+            "name": "Test Device Alpha",
+            "model": "TD-2024-IoT",
+            "status": "available",
+            "created_at": "2024-01-01T08:00:00Z",
+            "updated_at": "2024-01-01T08:00:00Z"
+        }
+    },
+    {
+        "model": "telemetry.telemetrydevice",
+        "pk": "222222222222222",
+        "fields": {
+            "name": "Test Device Beta",
+            "model": "TD-2024-IoT-Pro",
+            "status": "deployed",
+            "created_at": "2024-01-02T09:00:00Z",
+            "updated_at": "2024-01-02T09:00:00Z"
+        }
+    },
+    {
+        "model": "telemetry.telemetrydevice",
+        "pk": "333333333333333",
+        "fields": {
+            "name": "Test Device Gamma",
+            "model": "TD-2024-IoT",
+            "status": "maintenance",
+            "created_at": "2024-01-03T10:00:00Z",
+            "updated_at": "2024-01-03T10:00:00Z"
+        }
+    },
+    {
+        "model": "telemetry.telemetrydevice",
+        "pk": "444444444444444",
+        "fields": {
+            "name": "Test Device Delta",
+            "model": "TD-2024-IoT-Plus",
+            "status": "available",
+            "created_at": "2024-01-04T11:00:00Z",
+            "updated_at": "2024-01-04T11:00:00Z"
+        }
+    }
+]

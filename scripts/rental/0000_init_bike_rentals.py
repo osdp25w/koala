@@ -13,7 +13,7 @@ from scripts.base import BaseScript
 class CustomScript(BaseScript):
     def run(self):
         members = Member.objects.filter(is_active=True)
-        bikes = BikeInfo.objects.filter(is_active=True)
+        bikes = BikeInfo.objects.all()
 
         if not members.exists():
             print('⚠️ 警告: 沒有找到會員資料，請先執行 account 腳本創建會員')

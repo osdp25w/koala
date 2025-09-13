@@ -1,0 +1,38 @@
+[
+    {
+        "model": "bike.bikeinfo",
+        "pk": "TEST001",
+        "fields": {
+            "bike_name": "Urban Pro Alpha",
+            "bike_model": "UP-2024-A1",
+            "series": 1,
+            "telemetry_device": "345678901234567",
+            "created_at": "2024-01-01T00:00:00Z",
+            "updated_at": "2024-01-01T00:00:00Z"
+        }
+    },
+    {
+        "model": "bike.bikeinfo",
+        "pk": "TEST002",
+        "fields": {
+            "bike_name": "Urban Pro Beta",
+            "bike_model": "UP-2024-B1",
+            "series": 1,
+            "telemetry_device": null,
+            "created_at": "2024-01-01T00:00:00Z",
+            "updated_at": "2024-01-01T00:00:00Z"
+        }
+    },
+    {
+        "model": "bike.bikeinfo",
+        "pk": "TEST003",
+        "fields": {
+            "bike_name": "Compact Fold Gamma",
+            "bike_model": "CF-2024-G1",
+            "series": 2,
+            "telemetry_device": null,
+            "created_at": "2024-01-01T00:00:00Z",
+            "updated_at": "2024-01-01T00:00:00Z"
+        }
+    }
+]

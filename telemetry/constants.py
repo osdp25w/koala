@@ -4,6 +4,9 @@ class IoTConstants:
     # 消息類型常數
     MESSAGE_TYPE_TELEMETRY = 'telemetry'
 
+    # IMEI 相關常數
+    IMEI_LENGTH = 15
+
     # IoT 設備欄位到 TelemetryRecord 模型欄位的映射
     FIELD_MAPPING = {
         # 時間資訊

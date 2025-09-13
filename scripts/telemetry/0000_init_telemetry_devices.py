@@ -72,7 +72,7 @@ class CustomScript(BaseScript):
                 IMEI=data['IMEI'],
                 name=data['name'],
                 model='TD-2024-IoT',  # 統一的遙測設備型號
-                is_active=True,
+                status=TelemetryDevice.StatusOptions.AVAILABLE,
             )
             devices.append(device)
 
@@ -83,7 +83,9 @@ class CustomScript(BaseScript):
             print(f"  - {device.IMEI}: {device.name} ({device.model})")
 
         print(f"\n設備狀態:")
-        active_count = len([d for d in devices if d.is_active])
-        inactive_count = len(devices) - active_count
-        print(f"  - 啟用: {active_count} 個")
-        print(f"  - 停用: {inactive_count} 個")
+        available_count = len(
+            [d for d in devices if d.status == TelemetryDevice.StatusOptions.AVAILABLE]
+        )
+        other_count = len(devices) - available_count
+        print(f"  - 可用: {available_count} 個")
+        print(f"  - 其他狀態: {other_count} 個")

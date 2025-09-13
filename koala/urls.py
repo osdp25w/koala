@@ -33,6 +33,10 @@ urlpatterns = [
     ),
     path('api/bike/', include(('bike.urls', 'bike'), namespace='bike')),
     path('api/rental/', include(('rental.urls', 'rental'), namespace='rental')),
+    path(
+        'api/telemetry/',
+        include(('telemetry.urls', 'telemetry'), namespace='telemetry'),
+    ),
     # path('api/provider/', include(('provider.urls', 'provider'), namespace='provider')),
 ]
 

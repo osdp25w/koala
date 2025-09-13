@@ -1,8 +1,3 @@
-"""
-全局分區管理配置
-管理所有應用的 PostgreSQL 分區表
-"""
-
 from dateutil.relativedelta import relativedelta
 from psqlextra.partitioning import (
     PostgresCurrentTimePartitioningStrategy,
@@ -11,7 +6,6 @@ from psqlextra.partitioning import (
 )
 from psqlextra.partitioning.config import PostgresPartitioningConfig
 
-# 導入模型類別
 from telemetry.models import TelemetryRecord
 
 manager = PostgresPartitioningManager(

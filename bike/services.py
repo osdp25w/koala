@@ -9,11 +9,12 @@ from celery import current_app
 from django.core.cache import cache
 from django.db.models import Max, Q
 from django.utils import timezone
+from rest_framework import serializers
 
 from bike.constants import BikeErrorLogConstants
 from bike.models import BikeRealtimeStatus
 from telemetry.constants import IoTConstants
-from telemetry.models import TelemetryRecord
+from telemetry.models import TelemetryDevice, TelemetryRecord
 from telemetry.services import IoTRawProcessService, IoTRawValidationService
 
 logger = logging.getLogger(__name__)
@@ -771,3 +772,168 @@ class BikeRealtimeStatusTelemetrySyncer:
             record_ids = [record.id for record in records]
             TelemetryRecord.objects.filter(id__in=record_ids).update(is_synced=True)
             logger.info(f"Updated {len(records)} records as synced")
+
+
+class BikeManagementService:
+    """腳踏車管理服務，集中處理腳踏車相關的業務邏輯"""
+
+    @staticmethod
+    def can_modify_bike(bike) -> bool:
+        """
+        檢查腳踏車是否可以修改
+
+        Args:
+            bike: BikeInfo 實例
+
+        Returns:
+            bool: True 如果可以修改，False 否則
+        """
+        return bike.realtime_status.status != BikeRealtimeStatus.StatusOptions.RENTED
+
+    @staticmethod
+    def validate_bike_modification(bike):
+        """
+        驗證腳踏車修改權限，如果不能修改則拋出異常
+
+        Args:
+            bike: BikeInfo 實例
+
+        Raises:
+            serializers.ValidationError: 如果腳踏車不能修改
+        """
+        if not BikeManagementService.can_modify_bike(bike):
+            raise serializers.ValidationError(
+                {
+                    'bike_status': f'Cannot modify bike {bike.bike_id} while it is rented.'
+                }
+            )
+
+    @staticmethod
+    def can_delete_bike(bike) -> bool:
+        """
+        檢查腳踏車是否可以刪除
+
+        Args:
+            bike: BikeInfo 實例
+
+        Returns:
+            bool: True 如果可以刪除，False 否則
+        """
+        return bike.realtime_status.status != BikeRealtimeStatus.StatusOptions.RENTED
+
+    @staticmethod
+    def validate_bike_deletion(bike):
+        """
+        驗證腳踏車刪除權限，如果不能刪除則拋出異常
+
+        Args:
+            bike: BikeInfo 實例
+
+        Raises:
+            serializers.ValidationError: 如果腳踏車不能刪除
+        """
+        if not BikeManagementService.can_delete_bike(bike):
+            raise serializers.ValidationError(
+                {
+                    'bike_status': f'Cannot delete bike {bike.bike_id} while it is rented.'
+                }
+            )
+
+    @staticmethod
+    def validate_telemetry_device(device_imei: str, current_bike=None):
+        """
+        驗證遙測設備是否可用
+
+        Args:
+            device_imei: 設備 IMEI
+            current_bike: 當前腳踏車（更新時使用，新增時為 None）
+
+        Raises:
+            serializers.ValidationError: 如果設備不可用
+        """
+        try:
+            telemetry_device = TelemetryDevice.objects.get(IMEI=device_imei)
+
+            # 檢查設備狀態
+            if telemetry_device.status != TelemetryDevice.StatusOptions.AVAILABLE:
+                raise serializers.ValidationError(
+                    f"TelemetryDevice with IMEI {device_imei} is not available. "
+                    f"Current status: {telemetry_device.get_status_display()}"
+                )
+
+            # 檢查是否已被其他腳踏車使用
+            assigned_bike = getattr(telemetry_device, 'bike', None)
+            if assigned_bike and assigned_bike != current_bike:
+                raise serializers.ValidationError(
+                    f"TelemetryDevice with IMEI {device_imei} is already assigned to bike {assigned_bike.bike_id}"
+                )
+
+        except TelemetryDevice.DoesNotExist:
+            raise serializers.ValidationError(
+                f"TelemetryDevice with IMEI {device_imei} does not exist."
+            )
+
+    @staticmethod
+    def assign_device_to_bike(bike, device_imei: str):
+        """
+        將遙測設備分配給腳踏車
+
+        Args:
+            bike: BikeInfo 實例
+            device_imei: 設備 IMEI
+        """
+        telemetry_device = TelemetryDevice.objects.get(IMEI=device_imei)
+        telemetry_device.status = TelemetryDevice.StatusOptions.DEPLOYED
+        telemetry_device.save()
+
+        bike.telemetry_device_id = device_imei
+        bike.save()
+
+    @staticmethod
+    def release_device_from_bike(bike):
+        """
+        從腳踏車釋放遙測設備
+
+        Args:
+            bike: BikeInfo 實例
+        """
+        if bike.telemetry_device:
+            telemetry_device = bike.telemetry_device
+            telemetry_device.status = TelemetryDevice.StatusOptions.AVAILABLE
+            telemetry_device.save()
+
+            bike.telemetry_device = None
+            bike.save()
+
+    @staticmethod
+    def update_bike_telemetry_device(bike, new_device_imei: str = None):
+        """
+        更新腳踏車的遙測設備
+
+        Args:
+            bike: BikeInfo 實例
+            new_device_imei: 新設備 IMEI，None 表示移除設備
+        """
+        if bike.telemetry_device:
+            old_telemetry_device = bike.telemetry_device
+            old_telemetry_device.status = TelemetryDevice.StatusOptions.AVAILABLE
+            old_telemetry_device.save()
+
+        # 分配新設備
+        if new_device_imei:
+            BikeManagementService.assign_device_to_bike(bike, new_device_imei)
+        else:
+            bike.telemetry_device = None
+            bike.save()
+
+    @staticmethod
+    def delete_bike(bike):
+        """
+        刪除腳踏車並處理相關清理
+
+        Args:
+            bike: BikeInfo 實例
+        """
+        BikeManagementService.validate_bike_deletion(bike)
+        BikeManagementService.release_device_from_bike(bike)
+        bike.delete()

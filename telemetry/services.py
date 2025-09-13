@@ -6,7 +6,7 @@ from celery import current_app
 from django.utils import timezone
 
 from telemetry.constants import IoTConstants
-from telemetry.models import TelemetryRecord
+from telemetry.models import TelemetryDevice, TelemetryRecord
 from telemetry.utils import SafeDataTypeConverter
 
 logger = logging.getLogger(__name__)

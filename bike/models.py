@@ -6,14 +6,12 @@ from telemetry.models import TelemetryDevice
 class BikeCategory(models.Model):
     category_name = models.CharField(max_length=50, unique=True)
     description = models.TextField(blank=True)
-    is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         indexes = [
             models.Index(fields=['category_name']),
-            models.Index(fields=['is_active']),
         ]
         ordering = ['created_at']
 
@@ -29,7 +27,6 @@ class BikeSeries(models.Model):
     )
     series_name = models.CharField(max_length=50)
     description = models.TextField(blank=True)
-    is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -37,7 +34,6 @@ class BikeSeries(models.Model):
         unique_together = ['category', 'series_name']
         indexes = [
             models.Index(fields=['series_name']),
-            models.Index(fields=['is_active']),
         ]
         ordering = ['category', 'created_at']
 
@@ -61,14 +57,12 @@ class BikeInfo(models.Model):
         on_delete=models.CASCADE,
         related_name='bikes',
     )
-    is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         indexes = [
             models.Index(fields=['series']),
-            models.Index(fields=['is_active']),
         ]
         ordering = ['created_at']
 
