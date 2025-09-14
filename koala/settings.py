@@ -256,6 +256,7 @@ CHANNEL_LAYERS = {
             'hosts': [REDIS_CACHE_LOCATION],
             'capacity': 300,  # 每個群組最大消息容量
             'expiry': 1800,  # 消息 60 秒後過期
+            'symmetric_encryption_keys': [SECRET_KEY],  # 修復 Lua 腳本錯誤
         },
     },
 }
