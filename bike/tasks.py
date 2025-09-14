@@ -8,6 +8,7 @@ from django.utils import timezone
 
 from bike.models import BikeRealtimeStatus
 from bike.services import BikeRealtimeStatusTelemetrySyncer
+from bike.websocket.services import BikeErrorLogNotificationService
 from telemetry.constants import IoTConstants
 from telemetry.models import TelemetryRecord
 
@@ -92,6 +93,17 @@ def handle_bike_error_log(error_data: dict):
         logger.info(
             f"Created bike error log {bike_error_log.id} with {len(read_statuses)} read statuses"
         )
+
+        # 新增：發送 WebSocket 即時通知
+        try:
+            BikeErrorLogNotificationService.send_error_log_notification(bike_error_log)
+            logger.info(
+                f"Sent WebSocket error log notification for error {bike_error_log.id}"
+            )
+        except Exception as ws_error:
+            logger.error(
+                f"Failed to send WebSocket error log notification for error {bike_error_log.id}: {ws_error}"
+            )
 
     except Exception as e:
         logger.error(f"Failed to handle bike error log: {e}")

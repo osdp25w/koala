@@ -72,6 +72,7 @@ THIRD_PARTY_APPS = [
     'psqlextra',
     'import_export',
     'phonenumber_field',
+    'channels',
 ]
 
 INSTALLED_APPS += THIRD_PARTY_APPS
@@ -115,6 +116,7 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'koala.wsgi.application'
+ASGI_APPLICATION = 'koala.asgi.application'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.AutoField'
 
@@ -245,6 +247,18 @@ CELERY_BROKER_URL = (
 
 CELERY_RESULT_BACKEND = f'{REDIS_PROTOCOL}://{REDIS_HOST}:{REDIS_PORT}/0'
 CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
+
+# Channel Layer for WebSocket
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {
+            'hosts': [REDIS_CACHE_LOCATION],
+            'capacity': 300,  # 每個群組最大消息容量
+            'expiry': 1800,  # 消息 60 秒後過期
+        },
+    },
+}
 
 # paho mqtt client
 MQTT_HOST = os.environ.get('MQTT_HOST', RABBITMQ_HOST)

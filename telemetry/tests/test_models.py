@@ -7,8 +7,7 @@ from django.db import IntegrityError
 from django.test import TestCase
 
 from telemetry.models import TelemetryDevice
-
-from .base import BaseTelemetryTestWithFixtures
+from telemetry.tests.base import BaseTelemetryTestWithFixtures
 
 
 class TelemetryDeviceModelTest(BaseTelemetryTestWithFixtures):

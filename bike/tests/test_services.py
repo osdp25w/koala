@@ -6,9 +6,8 @@ from rest_framework.exceptions import ValidationError
 
 from bike.models import BikeInfo, BikeRealtimeStatus
 from bike.services import BikeManagementService
+from bike.tests.base import BaseBikeTestWithFixtures
 from telemetry.models import TelemetryDevice
-
-from .base import BaseBikeTestWithFixtures
 
 
 class BikeManagementServiceTest(BaseBikeTestWithFixtures):

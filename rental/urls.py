@@ -1,7 +1,7 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
-from .views import BikeRentalMemberViewSet, BikeRentalStaffViewSet
+from rental.views import BikeRentalMemberViewSet, BikeRentalStaffViewSet
 
 app_name = 'rental'
 
