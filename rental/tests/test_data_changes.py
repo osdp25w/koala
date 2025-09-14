@@ -6,11 +6,10 @@ from decimal import Decimal
 
 from django.urls import reverse
 from django.utils import timezone
+from rantal.tests.base import BaseRentalTestWithFixtures
 
 from bike.models import BikeInfo, BikeRealtimeStatus
 from rental.models import BikeRental
-
-from .base import BaseRentalTestWithFixtures
 
 
 class RentalDataChangesTest(BaseRentalTestWithFixtures):

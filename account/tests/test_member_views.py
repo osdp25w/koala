@@ -7,9 +7,8 @@ from rest_framework.test import APIClient, APITestCase
 
 from account.jwt import JWTService
 from account.models import Member, RBACModelPermissionScope, RBACPermission, RBACRole
+from account.tests.base import BaseAPITestWithFixtures
 from utils.constants import ResponseCode
-
-from .base import BaseAPITestWithFixtures
 
 
 class MemberViewSetTest(BaseAPITestWithFixtures):

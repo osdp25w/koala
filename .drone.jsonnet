@@ -32,6 +32,9 @@ local CELERY_DEPLOYMENTS = [
 ];
 
 
+local WEBSOCKET_DEPLOYMENT = "%s-websocket" % VALUES.K8S_DEPLOYMENT_NAME;
+
+
 local migration_chack_pipeline = {
   kind: "pipeline",
   type: "kubernetes",
@@ -174,6 +177,12 @@ local deploy_pipeline = {
       ) +
       [
         std.format(
+          "kubectl set image deployment/%s %s=%s:${DRONE_COMMIT_SHA} --namespace=%s || exit 1",
+          [WEBSOCKET_DEPLOYMENT, WEBSOCKET_DEPLOYMENT, VALUES.DOCKERHUB_IMAGE, VALUES.K8S_DEPLOYMENT_NAMESPACE]
+        ),
+      ] +
+      [
+        std.format(
           "echo 'Waiting for deployment to become ready...'; kubectl rollout status deployment/%s --namespace=%s --timeout=120s || (echo '❌ Deployment failed readiness check'; exit 1)",
           [VALUES.K8S_DEPLOYMENT_NAME, VALUES.K8S_DEPLOYMENT_NAMESPACE]
         ),
@@ -186,6 +195,12 @@ local deploy_pipeline = {
           ),
         CELERY_DEPLOYMENTS
       ) +
+      [
+        std.format(
+          "echo 'Waiting for WebSocket deployment to become ready...'; kubectl rollout status deployment/%s --namespace=%s --timeout=120s || (echo '❌ WebSocket Deployment failed readiness check'; exit 1)",
+          [WEBSOCKET_DEPLOYMENT, VALUES.K8S_DEPLOYMENT_NAMESPACE]
+        ),
+      ] +
       [
         std.format(
           "echo '✅ Deployment %s is successfully rolled out and ready.'",

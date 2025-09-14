@@ -27,6 +27,9 @@ django-postgres-extra = "2.0.9"
 django-import-export = "4.3.9"
 cryptography = "45.0.3"
 django-phonenumber-field = {version = "7.3.0", extras = ["phonenumbers"]}
+channels = "4.2.0"
+channels-redis = "4.2.0"
+daphne = "4.1.2"
 
 
 [build-system]

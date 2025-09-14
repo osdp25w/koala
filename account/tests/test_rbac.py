@@ -10,9 +10,8 @@ from account.models import (
     RBACRole,
     Staff,
 )
+from account.tests.base import FIXTURE_DIR
 from utils.constants import RowAccessLevel
-
-from .base import FIXTURE_DIR
 
 
 class RBACModelTest(TestCase):

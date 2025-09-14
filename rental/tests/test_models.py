@@ -9,8 +9,7 @@ from django.utils import timezone
 
 from bike.models import BikeRealtimeStatus
 from rental.models import BikeRental
-
-from .base import BaseRentalTestWithFixtures
+from rental.tests.base import BaseRentalTestWithFixtures
 
 
 class BikeRentalModelTest(BaseRentalTestWithFixtures):

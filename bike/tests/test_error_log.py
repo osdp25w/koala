@@ -6,8 +6,7 @@ from rest_framework import status
 
 from bike.models import BikeErrorLog, BikeErrorLogStatus
 from bike.services import BikeErrorLogService
-
-from .base import BaseBikeAPITest, BaseBikeTestWithFixtures
+from bike.tests.base import BaseBikeAPITest, BaseBikeTestWithFixtures
 
 
 class BikeErrorLogServiceTest(BaseBikeTestWithFixtures):

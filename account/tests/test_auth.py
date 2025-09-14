@@ -9,9 +9,8 @@ from rest_framework.test import APIClient, APITestCase
 from account.jwt import JWTService
 from account.models import Member, Staff
 from account.services import LoginEncryptionService
+from account.tests.base import FIXTURE_DIR, BaseAPITestWithFixtures
 from utils.constants import ResponseCode
-
-from .base import FIXTURE_DIR, BaseAPITestWithFixtures
 
 
 class AuthViewTest(BaseAPITestWithFixtures):

@@ -1,6 +1,9 @@
 from rest_framework.routers import DefaultRouter
 
-from .views import DailyOverviewStatisticsViewSet, HourlyOverviewStatisticsViewSet
+from statistic.views import (
+    DailyOverviewStatisticsViewSet,
+    HourlyOverviewStatisticsViewSet,
+)
 
 router = DefaultRouter()
 router.register(

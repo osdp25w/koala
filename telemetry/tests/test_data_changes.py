@@ -7,8 +7,7 @@ from rest_framework import status
 
 from bike.models import BikeCategory, BikeInfo, BikeSeries
 from telemetry.models import TelemetryDevice
-
-from .base import BaseTelemetryAPITest
+from telemetry.tests.base import BaseTelemetryAPITest
 
 
 class TelemetryDeviceDataChangesTest(BaseTelemetryAPITest):

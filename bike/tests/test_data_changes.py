@@ -5,9 +5,8 @@ Tests for bike data changes - 專注於資料變化，不檢查 API 回應
 from django.urls import reverse
 
 from bike.models import BikeCategory, BikeInfo, BikeRealtimeStatus, BikeSeries
+from bike.tests.base import BaseBikeTestWithFixtures
 from telemetry.models import TelemetryDevice
-
-from .base import BaseBikeTestWithFixtures
 
 
 class BikeDataChangesTest(BaseBikeTestWithFixtures):

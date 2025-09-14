@@ -1,6 +1,6 @@
 import django_filters
 
-from .models import BikeRental
+from rental.models import BikeRental
 
 
 class BikeRentalFilter(django_filters.FilterSet):

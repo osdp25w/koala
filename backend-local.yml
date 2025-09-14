@@ -50,6 +50,30 @@ services:
       retries: 3
       start_period: 40s
 
+  koala-websocket:
+    build: .
+    depends_on:
+      - koala-db
+      - koala-redis
+    restart: on-failure
+    env_file:
+      - ./env/koala-local.env
+    working_dir: /usr/src/app
+    volumes:
+      - ./:/usr/src/app
+    networks:
+      - koala-network
+    ports:
+      - "8001:8000"
+    entrypoint: []
+    command: daphne -b 0.0.0.0 -p 8000 koala.asgi:application
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
   koala-rabbitmq:
     image: rabbitmq:3-management
     restart: on-failure

@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from .models import DailyOverviewStatistics, HourlyOverviewStatistics
+from statistic.models import DailyOverviewStatistics, HourlyOverviewStatistics
 
 
 class DailyOverviewStatisticsSerializer(serializers.ModelSerializer):
