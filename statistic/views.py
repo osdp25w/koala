@@ -1,5 +1,7 @@
+from collections import defaultdict
 from datetime import datetime, timedelta
 
+from django.db.models import Sum
 from django.utils import timezone
 from django_filters import rest_framework as filters
 from django_filters.rest_framework import DjangoFilterBackend
@@ -8,13 +10,24 @@ from rest_framework.response import Response
 
 from account.simple_permissions import IsAdmin, IsStaff
 from statistic.filters import (
+    DailyGeometryCoordinateStatisticsFilter,
     DailyOverviewStatisticsFilter,
+    HourlyGeometryCoordinateStatisticsFilter,
     HourlyOverviewStatisticsFilter,
+    RouteMatchResultFilter,
 )
-from statistic.models import DailyOverviewStatistics, HourlyOverviewStatistics
+from statistic.models import (
+    DailyGeometryCoordinateStatistics,
+    DailyOverviewStatistics,
+    HourlyGeometryCoordinateStatistics,
+    HourlyOverviewStatistics,
+    RouteMatchResult,
+)
 from statistic.serializers import (
+    AggregatedGeometryCoordinateStatisticsSerializer,
     DailyOverviewStatisticsSerializer,
     HourlyOverviewStatisticsSerializer,
+    MemberRouteListSerializer,
 )
 from statistic.services import DailyStatisticsService, HourlyStatisticsService
 from utils.response import APISuccessResponse
@@ -90,4 +103,85 @@ class HourlyOverviewStatisticsViewSet(
                 results.insert(0, realtime_instance)
 
         serializer = self.get_serializer(results, many=True)
+        return APISuccessResponse(data=serializer.data)
+
+
+class HourlyGeometryCoordinateStatisticsViewSet(
+    mixins.ListModelMixin,
+    BaseGenericViewSet,
+):
+    permission_classes = [IsStaff | IsAdmin]
+    queryset = HourlyGeometryCoordinateStatistics.objects.all()
+    serializer_class = AggregatedGeometryCoordinateStatisticsSerializer
+    filter_backends = [DjangoFilterBackend]
+    filterset_class = HourlyGeometryCoordinateStatisticsFilter
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+
+        aggregated_queryset = (
+            queryset.select_related('geometry_coordinate')
+            .values('geometry_coordinate__latitude', 'geometry_coordinate__longitude')
+            .annotate(total_usage_count=Sum('usage_count'))
+        )
+
+        serializer = self.get_serializer(aggregated_queryset, many=True)
+        return APISuccessResponse(data=serializer.data)
+
+
+class DailyGeometryCoordinateStatisticsViewSet(
+    mixins.ListModelMixin,
+    BaseGenericViewSet,
+):
+    permission_classes = [IsStaff | IsAdmin]
+    queryset = DailyGeometryCoordinateStatistics.objects.all()
+    serializer_class = AggregatedGeometryCoordinateStatisticsSerializer
+    filter_backends = [DjangoFilterBackend]
+    filterset_class = DailyGeometryCoordinateStatisticsFilter
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+
+        aggregated_queryset = (
+            queryset.select_related('geometry_coordinate')
+            .values('geometry_coordinate__latitude', 'geometry_coordinate__longitude')
+            .annotate(total_usage_count=Sum('usage_count'))
+        )
+
+        serializer = self.get_serializer(aggregated_queryset, many=True)
+        return APISuccessResponse(data=serializer.data)
+
+
+class RouteMatchResultViewSet(
+    mixins.ListModelMixin,
+    BaseGenericViewSet,
+):
+    permission_classes = [IsStaff | IsAdmin]
+    queryset = RouteMatchResult.objects.all()
+    serializer_class = MemberRouteListSerializer
+    filter_backends = [DjangoFilterBackend]
+    filterset_class = RouteMatchResultFilter
+
+    def get_queryset(self):
+        return (
+            super()
+            .get_queryset()
+            .select_related('ride_session__bike_rental__member')
+            .order_by('-created_at')
+        )
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        member_routes = defaultdict(list)
+
+        for route_match in queryset:
+            member = route_match.ride_session.bike_rental.member
+            member_routes[member.id].append(route_match)
+
+        result_data = []
+        for member_id, routes in member_routes.items():
+            member = routes[0].ride_session.bike_rental.member
+            result_data.append({'member': member, 'routes': routes})
+
+        serializer = self.get_serializer(result_data, many=True)
         return APISuccessResponse(data=serializer.data)

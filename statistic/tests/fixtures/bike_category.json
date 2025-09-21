@@ -1,0 +1,12 @@
+[
+    {
+        "model": "bike.bikecategory",
+        "pk": 1,
+        "fields": {
+            "category_name": "電動輔助自行車",
+            "description": "測試用電動輔助自行車",
+            "created_at": "2024-01-01T00:00:00Z",
+            "updated_at": "2024-01-01T00:00:00Z"
+        }
+    }
+]

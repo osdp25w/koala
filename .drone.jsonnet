@@ -59,6 +59,10 @@ local migration_chack_pipeline = {
         MEMBER_API_TOKEN_SECRET_KEY: "NjlsG_iWylZuptss7l5yihbmjYTkxtww98mcXmLcluQ=",
       },
       commands: [
+        "apt-get update",
+        "apt-get install -y gdal-bin libgdal-dev libgeos-dev libproj-dev build-essential",
+        "export CPLUS_INCLUDE_PATH=/usr/include/gdal",
+        "export C_INCLUDE_PATH=/usr/include/gdal",
         "pip install -r requirements.txt || exit 1",
         "python manage.py check || exit 1",
         "python manage.py makemigrations --dry-run --check",
@@ -82,7 +86,7 @@ local test_pipeline = {
   services: [
     {
       name: "koala-test-db",
-      image: "postgres:14-alpine",
+      image: "postgis/postgis:14-3.2-alpine",
       environment: {
         POSTGRES_USER: "koala-test",
         POSTGRES_PASSWORD: "koala-test",
@@ -115,10 +119,14 @@ local test_pipeline = {
         REDIS_PORT: "6379",
       },
       commands: [
-        "apt-get update && apt-get install -y postgresql-client redis-tools",
+        "apt-get update && apt-get install -y postgresql-client redis-tools gdal-bin libgdal-dev libgeos-dev libproj-dev build-essential",
+        "export CPLUS_INCLUDE_PATH=/usr/include/gdal",
+        "export C_INCLUDE_PATH=/usr/include/gdal",
         "pip install -r requirements.txt",
         "until pg_isready -h koala-test-db -p 5432 -U koala-test; do sleep 2; done",
         "until redis-cli -h koala-test-redis -p 6379 ping | grep -q PONG; do sleep 2; done",
+        "PGPASSWORD=koala-test psql -h koala-test-db -U koala-test -d koala-test -c 'CREATE EXTENSION IF NOT EXISTS postgis;' || echo 'PostGIS extension may already exist'",
+        "PGPASSWORD=koala-test psql -h koala-test-db -U koala-test -d koala-test -c 'CREATE EXTENSION IF NOT EXISTS postgis_topology;' || echo 'PostGIS topology extension may already exist'",
         "python manage.py check || exit 1",
         "python manage.py migrate || exit 1",
         "python manage.py test --noinput --parallel=1 || exit 1",

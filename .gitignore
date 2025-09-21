@@ -2,6 +2,8 @@
 .cursor/
 rabbitmq_local_settings/certs/*.pem
 staticfiles/
+simulator/routes/*.json
+simulator/reports/*.json
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

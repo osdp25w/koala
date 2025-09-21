@@ -50,7 +50,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'django.contrib.postgres',
-    # 'django.contrib.gis',
+    'django.contrib.gis',
 ]
 
 START_APPS = [
@@ -60,6 +60,7 @@ START_APPS = [
     'telemetry',
     'rental',
     'statistic',
+    'location',
 ]
 
 INSTALLED_APPS += START_APPS
@@ -123,6 +124,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.AutoField'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
+POSTGRES_EXTRA_DB_BACKEND_BASE = 'django.contrib.gis.db.backends.postgis'
 DATABASES = {
     'default': {
         # 'ENGINE': 'django.db.backends.postgresql',
@@ -307,3 +309,5 @@ CELERY_MQTT_CONFIG = {
 
 # psqlextra 分區管理配置
 PSQLEXTRA_PARTITIONING_MANAGER = 'koala.partitioning.manager'
+
+OSRM_BASE_URL = os.environ.get('OSRM_BASE_URL', 'http://host.docker.internal:5000')

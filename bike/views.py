@@ -8,7 +8,7 @@ from rest_framework.permissions import IsAuthenticated
 
 from account.models import Member, Staff
 from account.simple_permissions import IsAdmin, IsStaff
-from bike.filters import BikeErrorLogStatusFilter
+from bike.filters import BikeErrorLogStatusFilter, BikeRealtimeStatusFilter
 from bike.models import (
     BikeCategory,
     BikeErrorLogStatus,
@@ -84,6 +84,8 @@ class BikeRealtimeStatusViewSet(
     serializer_class = BikeRealtimeStatusSerializer
     pagination_class = LimitOffsetPagination
     ordering = ['-last_seen']
+    filter_backends = [DjangoFilterBackend]
+    filterset_class = BikeRealtimeStatusFilter
 
     def get_queryset(self):
         user = self.request.user

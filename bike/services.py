@@ -124,27 +124,16 @@ class BikeErrorLogService:
             new_lat_decimal = new_lat / 1000000.0
             new_lng_decimal = new_lng / 1000000.0
 
-            # Haversine 公式計算距離
-            def haversine_distance(lat1, lon1, lat2, lon2):
-                R = 6371000  # 地球半徑（公尺）
-                lat1_rad = math.radians(lat1)
-                lat2_rad = math.radians(lat2)
-                delta_lat = math.radians(lat2 - lat1)
-                delta_lon = math.radians(lon2 - lon1)
+            # 使用 PostGIS Point 計算距離
+            from django.contrib.gis.geos import Point
 
-                a = (
-                    math.sin(delta_lat / 2) ** 2
-                    + math.cos(lat1_rad)
-                    * math.cos(lat2_rad)
-                    * math.sin(delta_lon / 2) ** 2
-                )
-                c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+            old_point = Point(old_lng, old_lat, srid=4326)
+            new_point = Point(new_lng_decimal, new_lat_decimal, srid=4326)
 
-                return R * c
-
-            distance = haversine_distance(
-                old_lat, old_lng, new_lat_decimal, new_lng_decimal
-            )
+            # 使用 GeoDjango 計算距離，轉換到投影坐標系獲得精確距離
+            old_point_projected = old_point.transform(3857, clone=True)  # Web Mercator
+            new_point_projected = new_point.transform(3857, clone=True)
+            distance = old_point_projected.distance(new_point_projected)  # 返回米
 
             # 計算時間差
             time_diff = (timezone.now() - current_status.last_seen).total_seconds()

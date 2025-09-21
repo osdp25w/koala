@@ -10,6 +10,10 @@ services:
       - koala-network
     ports:
       - "5432:5432"
+    # apt-get update
+    # apt-get install -y postgis postgresql-14-postgis-3
+    # CREATE EXTENSION IF NOT EXISTS postgis;
+    # CREATE EXTENSION IF NOT EXISTS postgis_topology;
 
   koala-redis:
     restart: on-failure

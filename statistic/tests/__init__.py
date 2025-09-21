@@ -1,0 +1,3 @@
+"""
+Statistic app tests
+"""

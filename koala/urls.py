@@ -37,6 +37,7 @@ urlpatterns = [
         'api/telemetry/',
         include(('telemetry.urls', 'telemetry'), namespace='telemetry'),
     ),
+    path('api/location/', include(('location.urls', 'location'), namespace='location')),
     # path('api/provider/', include(('provider.urls', 'provider'), namespace='provider')),
 ]
 
