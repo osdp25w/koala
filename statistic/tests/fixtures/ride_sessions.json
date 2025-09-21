@@ -1,0 +1,44 @@
+[
+    {
+        "model": "statistic.ridesession",
+        "pk": 101,
+        "fields": {
+            "bike_rental": 1,
+            "status": "created",
+            "raw_point_count": 0,
+            "valid_point_count": 0,
+            "error_message": null,
+            "gps_trajectory": null,
+            "created_at": "2024-01-15T10:00:00Z",
+            "updated_at": "2024-01-15T10:00:00Z"
+        }
+    },
+    {
+        "model": "statistic.ridesession",
+        "pk": 102,
+        "fields": {
+            "bike_rental": 2,
+            "status": "created",
+            "raw_point_count": 0,
+            "valid_point_count": 0,
+            "error_message": null,
+            "gps_trajectory": null,
+            "created_at": "2024-01-15T12:00:00Z",
+            "updated_at": "2024-01-15T12:00:00Z"
+        }
+    },
+    {
+        "model": "statistic.ridesession",
+        "pk": 103,
+        "fields": {
+            "bike_rental": 3,
+            "status": "created",
+            "raw_point_count": 0,
+            "valid_point_count": 0,
+            "error_message": null,
+            "gps_trajectory": null,
+            "created_at": "2024-01-15T14:00:00Z",
+            "updated_at": "2024-01-15T14:00:00Z"
+        }
+    }
+]

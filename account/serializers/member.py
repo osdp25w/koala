@@ -167,3 +167,9 @@ class MemberRegistrationSerializer(
             member = Member.objects.create(**validated_data)
 
             return member
+
+
+class MemberSimpleSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Member
+        fields = ['id', 'full_name', 'phone']

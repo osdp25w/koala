@@ -1,0 +1,26 @@
+[
+    {
+        "model": "telemetry.telemetrydevice",
+        "pk": "123456789012345",
+        "fields": {
+            "IMEI": "123456789012345",
+            "name": "測試設備1",
+            "model": "TEST_MODEL",
+            "status": "active",
+            "created_at": "2024-01-01T00:00:00Z",
+            "updated_at": "2024-01-01T00:00:00Z"
+        }
+    },
+    {
+        "model": "telemetry.telemetrydevice",
+        "pk": "345678901234567",
+        "fields": {
+            "IMEI": "345678901234567",
+            "name": "測試設備2",
+            "model": "TEST_MODEL_2",
+            "status": "active",
+            "created_at": "2024-01-01T00:00:00Z",
+            "updated_at": "2024-01-01T00:00:00Z"
+        }
+    }
+]

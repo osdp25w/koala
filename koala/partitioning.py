@@ -6,6 +6,7 @@ from psqlextra.partitioning import (
 )
 from psqlextra.partitioning.config import PostgresPartitioningConfig
 
+from statistic.models import RouteSegmentRecord
 from telemetry.models import TelemetryRecord
 
 manager = PostgresPartitioningManager(
@@ -17,6 +18,15 @@ manager = PostgresPartitioningManager(
                 size=PostgresTimePartitionSize(months=1),  # 按月分區
                 count=3,  # 預先創建未來3個月的分區
                 max_age=relativedelta(months=24),  # 保留24個月的數據
+            ),
+        ),
+        # RouteSegmentRecord - 保留12個月的路段記錄
+        PostgresPartitioningConfig(
+            model=RouteSegmentRecord,
+            strategy=PostgresCurrentTimePartitioningStrategy(
+                size=PostgresTimePartitionSize(months=1),  # 按月分區
+                count=3,  # 預先創建未來3個月的分區
+                max_age=relativedelta(months=24),  # 保留12個月的數據
             ),
         ),
         # 未來可以添加其他分區表配置：

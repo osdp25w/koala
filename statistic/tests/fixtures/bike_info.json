@@ -1,0 +1,28 @@
+[
+    {
+        "model": "bike.bikeinfo",
+        "pk": "TEST001",
+        "fields": {
+            "bike_id": "TEST001",
+            "series": 1,
+            "telemetry_device": "123456789012345",
+            "bike_name": "測試車輛001",
+            "bike_model": "TEST_MODEL",
+            "created_at": "2024-01-01T00:00:00Z",
+            "updated_at": "2024-01-01T00:00:00Z"
+        }
+    },
+    {
+        "model": "bike.bikeinfo",
+        "pk": "TEST002",
+        "fields": {
+            "bike_id": "TEST002",
+            "series": 1,
+            "telemetry_device": "345678901234567",
+            "bike_name": "測試車輛002",
+            "bike_model": "TEST_MODEL_2",
+            "created_at": "2024-01-01T00:00:00Z",
+            "updated_at": "2024-01-01T00:00:00Z"
+        }
+    }
+]
