@@ -91,7 +91,7 @@ class RealtimeSimulationRunner:
             )
 
             # 發送IoT訊息 - 使用IoT協議格式
-            current_time = timezone.now().strftime('%Y%m%d%H%M%S')
+            current_time = timezone.localtime().strftime('%Y%m%d%H%M%S')
 
             # 1%機率觸發錯誤
             should_trigger_error = random.random() < 0.01
