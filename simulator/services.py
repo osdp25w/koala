@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 
 import requests
+from django.conf import settings
 from django.contrib.gis.geos import Point
 from django.utils import timezone
 
@@ -18,7 +19,7 @@ from simulator.routes import TEST_ROUTES
 class OSRMRouteService:
     """OSRM路線服務，獲取真實的路線座標"""
 
-    OSRM_BASE_URL = 'http://host.docker.internal:5000/route/v1/driving'
+    OSRM_BASE_URL = f'{settings.OSRM_BASE_URL}/route/v1/driving'
 
     @classmethod
     def get_route_coordinates(
