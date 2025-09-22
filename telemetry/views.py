@@ -2,6 +2,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import mixins, serializers, status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.filters import SearchFilter
+from rest_framework.pagination import LimitOffsetPagination
 
 from account.simple_permissions import IsAdmin, IsStaff
 from telemetry.filters import TelemetryDeviceFilter
@@ -29,6 +30,7 @@ class TelemetryDeviceViewSet(
     permission_classes = [IsStaff | IsAdmin]
     filter_backends = [DjangoFilterBackend]
     filterset_class = TelemetryDeviceFilter
+    pagination_class = LimitOffsetPagination
 
     def get_serializer_class(self):
         match self.action:

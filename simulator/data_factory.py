@@ -149,7 +149,7 @@ class SimulationDataFactory:
                 defaults={
                     'name': device_name,
                     'model': 'SIMULATOR-TELEMETRY-2024',
-                    'status': 'active',
+                    'status': TelemetryDevice.StatusOptions.AVAILABLE,
                 },
             )
             devices.append(device)
