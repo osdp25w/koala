@@ -86,8 +86,14 @@ def refresh_token_view(request):
 @api_view(['POST'])
 def logout_view(request):
     try:
-        # 在實際應用中，你可能需要將 refresh_token 加入黑名單
-        # 這裡只是簡單的登出回應
+        auth_header = request.META.get('HTTP_AUTHORIZATION', '')
+        if auth_header.startswith('Bearer '):
+            access_token = auth_header.split(' ')[1]
+            JWTService.blacklist_access_token(access_token)
+
+        refresh_token = request.data.get('refresh_token')
+        if refresh_token:
+            JWTService.blacklist_refresh_token(refresh_token)
 
         return APISuccessResponse(msg=ResponseMessage.SUCCESS)
 
