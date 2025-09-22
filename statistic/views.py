@@ -1,6 +1,7 @@
 from collections import defaultdict
 from datetime import datetime, timedelta
 
+from django.core.paginator import Paginator
 from django.db.models import Sum
 from django.utils import timezone
 from django_filters import rest_framework as filters
@@ -23,6 +24,7 @@ from statistic.models import (
     HourlyOverviewStatistics,
     RouteMatchResult,
 )
+from statistic.pagination import MemberRouteListPagination
 from statistic.serializers import (
     AggregatedGeometryCoordinateStatisticsSerializer,
     DailyOverviewStatisticsSerializer,
@@ -161,6 +163,7 @@ class RouteMatchResultViewSet(
     serializer_class = MemberRouteListSerializer
     filter_backends = [DjangoFilterBackend]
     filterset_class = RouteMatchResultFilter
+    pagination_class = MemberRouteListPagination
 
     def get_queryset(self):
         return (
@@ -172,8 +175,13 @@ class RouteMatchResultViewSet(
 
     def list(self, request, *args, **kwargs):
         queryset = self.filter_queryset(self.get_queryset())
-        member_routes = defaultdict(list)
+        page = self.paginate_queryset(queryset)
 
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
+        member_routes = defaultdict(list)
         for route_match in queryset:
             member = route_match.ride_session.bike_rental.member
             member_routes[member.id].append(route_match)
