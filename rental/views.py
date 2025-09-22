@@ -3,6 +3,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import mixins
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
+from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
@@ -36,6 +37,7 @@ class BikeRentalMemberViewSet(
     """
 
     permission_classes = [IsMember]
+    pagination_class = LimitOffsetPagination
 
     def get_queryset(self):
         if not isinstance(self.request.user.profile, Member):
@@ -96,6 +98,7 @@ class BikeRentalStaffViewSet(
     permission_classes = [IsStaff]
     filter_backends = [DjangoFilterBackend]
     filterset_class = BikeRentalFilter
+    pagination_class = LimitOffsetPagination
     ordering = ['-created_at']
 
     def get_queryset(self):
