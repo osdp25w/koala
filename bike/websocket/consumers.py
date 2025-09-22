@@ -3,9 +3,57 @@ import logging
 
 from channels.db import database_sync_to_async
 
+from account.models import Staff
 from websocket.consumers import BaseNotificationConsumer
 
 logger = logging.getLogger(__name__)
+
+
+class BikeRealtimeStatusConsumer(BaseNotificationConsumer):
+    """
+    處理 Bike 即時狀態通知的 WebSocket 連接
+    只允許 Staff 用戶連接，用於接收車輛狀態更新
+    """
+
+    GROUP_NAMES = ['bike_realtime_status_group']
+
+    async def setup(self):
+        """
+        設定 Bike 即時狀態 Consumer
+        """
+        self.staff = await database_sync_to_async(lambda: self.user.profile)()
+        self.staff_id = self.staff.id
+
+        # 設定要加入的群組
+        self.group_names = self.GROUP_NAMES
+
+        logger.info(
+            f"Staff {self.staff_id} setup for bike realtime status notifications"
+        )
+
+    # === Channel 事件處理 ===
+
+    async def batch_status_update(self, event):
+        """
+        處理批量狀態更新事件，推送給前端
+        """
+        try:
+            await self.send(
+                text_data=json.dumps(
+                    {
+                        'type': 'bike_realtime_status_notification',
+                        'data': event['data'],
+                    },
+                    ensure_ascii=False,
+                )
+            )
+
+            logger.debug(
+                f"Sent batch status update to staff {self.staff_id}: {len(event['data'])} bikes"
+            )
+
+        except Exception as e:
+            logger.error(f"Error sending batch status update: {e}")
 
 
 class BikeErrorLogNotificationConsumer(BaseNotificationConsumer):
