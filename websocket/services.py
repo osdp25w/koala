@@ -1,4 +1,8 @@
 import logging
+from datetime import datetime
+
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
 
 logger = logging.getLogger(__name__)
 
@@ -18,11 +22,6 @@ class BaseNotificationService:
             group_name: 要測試的群組名稱
         """
         try:
-            from datetime import datetime
-
-            from asgiref.sync import async_to_sync
-            from channels.layers import get_channel_layer
-
             channel_layer = get_channel_layer()
 
             # 發送測試消息

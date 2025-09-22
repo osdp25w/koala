@@ -13,6 +13,7 @@ from rest_framework import serializers
 
 from bike.constants import BikeErrorLogConstants
 from bike.models import BikeRealtimeStatus
+from bike.websocket.services import BikeRealtimeStatusWebSocketService
 from telemetry.constants import IoTConstants
 from telemetry.models import TelemetryDevice, TelemetryRecord
 from telemetry.services import IoTRawProcessService, IoTRawValidationService
@@ -649,6 +650,14 @@ class BikeRealtimeStatusTelemetrySyncer:
             for bike_status in statuses_to_update:
                 bike_status.save()  # TODO: fix n+1 problem
             logger.info(f"Updated {len(statuses_to_update)} bike statuses")
+
+            # 批量推送 WebSocket 更新給 Staff
+            try:
+                BikeRealtimeStatusWebSocketService.broadcast_batch_status_update(
+                    statuses_to_update
+                )
+            except Exception as e:
+                logger.error(f"Failed to broadcast WebSocket status updates: {e}")
 
         return len(statuses_to_update)
 

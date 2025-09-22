@@ -1,9 +1,69 @@
 import logging
+from typing import List
 
-from bike.models import BikeErrorLog
+from bike.models import BikeErrorLog, BikeRealtimeStatus
 from websocket.services import BaseNotificationService
 
 logger = logging.getLogger(__name__)
+
+
+class BikeRealtimeStatusWebSocketService(BaseNotificationService):
+    """
+    Bike 即時狀態 WebSocket 通知服務
+    處理車輛即時狀態相關的即時推送
+    """
+
+    GROUP_NAME = 'bike_realtime_status_group'
+
+    @staticmethod
+    def broadcast_batch_status_update(bike_statuses: List[BikeRealtimeStatus]):
+        """
+        批量推送車輛狀態更新給所有連接的 Staff
+
+        Args:
+            bike_statuses: BikeRealtimeStatus 實例列表
+        """
+        try:
+            if not bike_statuses:
+                return
+
+            status_data = []
+            for status in bike_statuses:
+                status_data.append(
+                    {
+                        'bike_id': status.bike.bike_id,
+                        'lat_decimal': status.lat_decimal,
+                        'lng_decimal': status.lng_decimal,
+                        'soc': status.soc,
+                        'vehicle_speed': status.vehicle_speed,
+                        'last_seen': status.last_seen.isoformat(),
+                    }
+                )
+
+            success = BikeRealtimeStatusWebSocketService.send_to_group(
+                BikeRealtimeStatusWebSocketService.GROUP_NAME,
+                'batch_status_update',
+                status_data,
+            )
+
+            if success:
+                logger.info(
+                    f"Sent batch status update for {len(bike_statuses)} bikes to staff"
+                )
+
+        except Exception as e:
+            logger.error(
+                f"Failed to send batch status update for {len(bike_statuses)} bikes: {e}"
+            )
+
+    @staticmethod
+    def test_connection():
+        """
+        測試 Bike 即時狀態 WebSocket 連接
+        """
+        return BikeRealtimeStatusWebSocketService.test_connection(
+            BikeRealtimeStatusWebSocketService.GROUP_NAME
+        )
 
 
 class BikeErrorLogNotificationService(BaseNotificationService):
