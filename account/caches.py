@@ -12,6 +12,35 @@ from utils.constants import RowAccessLevel
 logger = logging.getLogger(__name__)
 
 
+class TokenBlacklistCache:
+    CACHE_TIMEOUT = 60 * 60 * 24
+    CACHE_KEY_PATTERN = 'token_blacklist:{token_jti}'
+
+    @classmethod
+    def _compose_cache_key(cls, token_jti: str) -> str:
+        return cls.CACHE_KEY_PATTERN.format(token_jti=token_jti)
+
+    @classmethod
+    def add_token_to_blacklist(cls, token_jti: str) -> None:
+        """將token JTI加入黑名單"""
+        cache_key = cls._compose_cache_key(token_jti)
+        cache.set(cache_key, True, cls.CACHE_TIMEOUT)
+        logger.info(f"Added token {token_jti} to blacklist")
+
+    @classmethod
+    def is_token_blacklisted(cls, token_jti: str) -> bool:
+        """檢查token是否在黑名單中"""
+        cache_key = cls._compose_cache_key(token_jti)
+        return cache.get(cache_key, False)
+
+    @classmethod
+    def remove_token_from_blacklist(cls, token_jti: str) -> None:
+        """從黑名單中移除token"""
+        cache_key = cls._compose_cache_key(token_jti)
+        cache.delete(cache_key)
+        logger.info(f"Removed token {token_jti} from blacklist")
+
+
 class PermissionCache:
     CACHE_TIMEOUT = 60 * 60 * 24  # 1 day
     CACHE_KEY_PATTERN = 'perms:{profile_type}:{profile_id}:{model_name}'
