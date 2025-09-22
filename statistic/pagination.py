@@ -36,6 +36,8 @@ class MemberRouteListPagination(PageNumberPagination):
         """
         對queryset進行member聚合分頁
         """
+        self.request = request
+
         # 獲取分頁大小
         page_size = self.get_page_size(request)
         if not page_size:
